@@ -187,8 +187,12 @@ public final class BookmarkHelper {
         throw new NoSuchFieldException(name);
     }
 
-    private static List<Recipe.RecipeId> bookmarkedRecipeIds(Scope scope) {
-        List<Recipe.RecipeId> ids = new ArrayList<Recipe.RecipeId>();
+    /**
+     * The expansion gate: a non-ingredient bookmark entry carrying a recipe
+     * whose stack IS the target — i.e. the bookmark tree contains something
+     * that produces this item/fluid as a product.
+     */
+    private static BookmarkItem findResultEntry(ItemStack stack, FluidStack fluid, Scope scope) {
         List<BookmarkGrid> grids;
         if (scope != null) {
             grids = new ArrayList<BookmarkGrid>();
@@ -199,18 +203,29 @@ public final class BookmarkHelper {
         for (BookmarkGrid grid : grids) {
             for (int i = 0; i < grid.size(); i++) {
                 BookmarkItem item = grid.getBookmarkItem(i);
-                if (item == null || item.recipeId == null) {
+                if (item == null || item.recipeId == null
+                    || item.itemStack == null
+                    || item.itemStack.getItem() == null) {
                     continue;
                 }
                 if (scope != null && item.groupId != scope.groupId) {
                     continue;
                 }
-                if (!ids.contains(item.recipeId)) {
-                    ids.add(item.recipeId);
+                if (item.type == BookmarkItem.BookmarkItemType.INGREDIENT) {
+                    continue;
+                }
+                if (stack != null && RecipeIndex.itemKey(item.itemStack) == RecipeIndex.itemKey(stack)) {
+                    return item;
+                }
+                if (fluid != null) {
+                    FluidStack asFluid = StackInfo.getFluid(item.itemStack);
+                    if (asFluid != null && asFluid.getFluid() == fluid.getFluid()) {
+                        return item;
+                    }
                 }
             }
         }
-        return ids;
+        return null;
     }
 
     /**
@@ -224,12 +239,11 @@ public final class BookmarkHelper {
     /**
      * Scoped variant: only recipes bookmarked inside the given group count.
      * <p>
-     * Every candidate producer already outputs the target, so the bookmark
-     * only has to be identified as "this recipe": same recipe map (NEI's
-     * stored handler name) or its stored result appearing among the
-     * candidate's outputs, plus at least half its ingredients matching. The
-     * stored result alone is NOT required to equal the target — NEI records
-     * only a recipe's first output, which misses multi-output recipes.
+     * The rule mirrors ShadowTheAge's calculator: an ingredient expands only
+     * when the bookmark tree holds an entry that PRODUCES it (a RESULT/plain
+     * recipe entry with the ingredient as its stack). That entry's RecipeId
+     * then just identifies which producer to select — recipe map name plus
+     * ingredient overlap — with the first producer as fallback.
      */
     public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers,
         Scope scope) {
@@ -237,30 +251,24 @@ public final class BookmarkHelper {
             return -1;
         }
         try {
-            for (Recipe.RecipeId rid : bookmarkedRecipeIds(scope)) {
-                int best = -1;
-                int bestScore = -1;
-                for (int i = 0; i < producers.size(); i++) {
-                    RecipeIndex.Producer p = producers.get(i);
-                    boolean mapMatch = p.map.unlocalizedName.equals(rid.getHandleName());
-                    boolean resultHit = resultInOutputs(rid, p.recipe);
-                    if (!mapMatch && !resultHit) {
-                        continue;
-                    }
-                    int[] match = ingredientMatch(rid, p.recipe);
-                    if (match[1] > 0 && match[0] * 2 < match[1]) {
-                        continue;
-                    }
-                    int score = (mapMatch ? 1000 : 0) + (resultHit ? 500 : 0) + match[0] * 10;
-                    if (score > bestScore) {
-                        bestScore = score;
-                        best = i;
-                    }
-                }
-                if (best >= 0) {
-                    return best;
+            BookmarkItem entry = findResultEntry(stack, fluid, scope);
+            if (entry == null) {
+                return -1;
+            }
+            Recipe.RecipeId rid = entry.recipeId;
+            int best = 0;
+            int bestScore = -1;
+            for (int i = 0; i < producers.size(); i++) {
+                RecipeIndex.Producer p = producers.get(i);
+                boolean mapMatch = p.map.unlocalizedName.equals(rid.getHandleName());
+                int[] match = ingredientMatch(rid, p.recipe);
+                int score = (mapMatch ? 1000 : 0) + match[0] * 10;
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = i;
                 }
             }
+            return best;
         } catch (Throwable t) {
             if (!broken) {
                 broken = true;
@@ -268,31 +276,6 @@ public final class BookmarkHelper {
             }
         }
         return -1;
-    }
-
-    /** Does the bookmark's stored result appear among this recipe's outputs? */
-    private static boolean resultInOutputs(Recipe.RecipeId rid, gregtech.api.util.GTRecipe recipe) {
-        ItemStack result = rid.getResult();
-        if (result == null || result.getItem() == null) {
-            return false;
-        }
-        if (recipe.mOutputs != null) {
-            long key = RecipeIndex.itemKey(result);
-            for (ItemStack out : recipe.mOutputs) {
-                if (out != null && out.getItem() != null && RecipeIndex.itemKey(out) == key) {
-                    return true;
-                }
-            }
-        }
-        FluidStack asFluid = StackInfo.getFluid(result);
-        if (asFluid != null && recipe.mFluidOutputs != null) {
-            for (FluidStack out : recipe.mFluidOutputs) {
-                if (out != null && out.getFluid() == asFluid.getFluid()) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /** Returns {matched, total} over the bookmark's usable ingredients. */

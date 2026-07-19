@@ -36,6 +36,7 @@ public class GuiRateCalculator extends GuiScreen {
     private static final int PANEL_WIDTH = 320;
     private static final int ROW_HEIGHT = 22;
     private static final int TREE_BUTTON_ID = 900;
+    private static final int SETTINGS_BUTTON_ID = 901;
 
     private final GuiScreen parent;
     private final RecipeMap<?> recipeMap;
@@ -194,6 +195,7 @@ public class GuiRateCalculator extends GuiScreen {
         targetField.setText(targetText);
         targetField.setMaxStringLength(10);
         buttonList.add(new GuiButton(TREE_BUTTON_ID, panelLeft + 236, fieldY - 2, 60, 20, "Tree..."));
+        buttonList.add(new GuiButton(SETTINGS_BUTTON_ID, panelLeft + 170, fieldY - 2, 60, 20, "Settings"));
     }
 
     private String targetText = "64";
@@ -215,6 +217,10 @@ public class GuiRateCalculator extends GuiScreen {
     protected void actionPerformed(GuiButton button) {
         if (button.id == TREE_BUTTON_ID) {
             openTree();
+            return;
+        }
+        if (button.id == SETTINGS_BUTTON_ID) {
+            mc.displayGuiScreen(new GuiRateCalcSettings(this));
             return;
         }
         int rowIndex = button.id / 2;

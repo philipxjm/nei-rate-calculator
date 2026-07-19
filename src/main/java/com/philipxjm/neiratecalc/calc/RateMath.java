@@ -68,6 +68,9 @@ public final class RateMath {
         }
 
         int maxParallels = Math.max(1, p.parallels.maxParallels(cfg, recipe));
+        if (p.multiblock) {
+            maxParallels = Math.min(maxParallels, com.philipxjm.neiratecalc.Config.maxParallels);
+        }
         int parallels = (int) Math.max(1, Math.min(maxParallels, availableEUt / Math.max(1, effEUt)));
 
         calc.setParallel(parallels)

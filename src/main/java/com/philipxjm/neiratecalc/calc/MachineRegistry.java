@@ -82,7 +82,16 @@ public final class MachineRegistry {
             cfg.machines = 1;
         } else {
             List<MachinePreset> presets = presetsFor(mapUnlocalizedName);
-            cfg = new MachineConfig(presets.get(0));
+            MachinePreset chosen = presets.get(0);
+            if (Config.preferMultiblock) {
+                for (MachinePreset p : presets) {
+                    if (p.multiblock) {
+                        chosen = p;
+                        break;
+                    }
+                }
+            }
+            cfg = new MachineConfig(chosen);
             cfg.tier = Config.defaultTier >= 0 ? Config.defaultTier : minTier;
             cfg.amps = Config.defaultAmps;
         }

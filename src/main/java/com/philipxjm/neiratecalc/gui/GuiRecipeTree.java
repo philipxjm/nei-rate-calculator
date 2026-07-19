@@ -15,6 +15,7 @@ import net.minecraftforge.fluids.FluidStack;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
+import com.philipxjm.neiratecalc.calc.BookmarkHelper;
 import com.philipxjm.neiratecalc.calc.MachineConfig;
 import com.philipxjm.neiratecalc.calc.MachinePreset;
 import com.philipxjm.neiratecalc.calc.MachineRegistry;
@@ -50,6 +51,8 @@ public class GuiRecipeTree extends GuiScreen {
         double requiredPerMin;
         List<RecipeIndex.Producer> producers = new ArrayList<RecipeIndex.Producer>();
         int producerIdx = -1;
+        /** Index of the NEI-bookmarked recipe among producers, -1 if none. */
+        int bookmarkIdx = -1;
         MachineConfig cfg;
         RateResult rr;
         double craftsPerMinNeeded;
@@ -124,6 +127,7 @@ public class GuiRecipeTree extends GuiScreen {
             root.producers.add(0, new RecipeIndex.Producer(recipeMap, recipe));
             root.producerIdx = 0;
         }
+        root.bookmarkIdx = BookmarkHelper.findBookmarked(out.stack, out.fluid, root.producers);
         expand(root);
         recomputeAll();
         selected = root;
@@ -153,6 +157,7 @@ public class GuiRecipeTree extends GuiScreen {
                 if (in == null || in.stackSize <= 0 || in.getItem() == null) continue;
                 Node child = new Node(in.getDisplayName(), in, null, node);
                 child.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forItem(in));
+                child.bookmarkIdx = BookmarkHelper.findBookmarked(in, null, child.producers);
                 markLoop(child);
                 node.children.add(child);
             }
@@ -162,6 +167,7 @@ public class GuiRecipeTree extends GuiScreen {
                 if (in == null || in.amount <= 0 || in.getFluid() == null) continue;
                 Node child = new Node(in.getLocalizedName(), null, in, node);
                 child.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(in));
+                child.bookmarkIdx = BookmarkHelper.findBookmarked(null, in, child.producers);
                 markLoop(child);
                 node.children.add(child);
             }
@@ -322,6 +328,7 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.add(new GuiButton(10, 210, py2, 14, 20, ">"));
         buttonList.add(new GuiButton(11, 230, py2, 14, 20, "<"));
         buttonList.add(new GuiButton(12, 316, py2, 14, 20, ">"));
+        buttonList.add(new GuiButton(22, width - 172, 6, 48, 20, "Cfg"));
         buttonList.add(new GuiButton(20, width - 120, 6, 54, 20, "Totals"));
         buttonList.add(new GuiButton(21, width - 62, 6, 54, 20, "Back"));
 
@@ -346,6 +353,10 @@ public class GuiRecipeTree extends GuiScreen {
         }
         if (button.id == 21) {
             mc.displayGuiScreen(parent);
+            return;
+        }
+        if (button.id == 22) {
+            mc.displayGuiScreen(new GuiRateCalcSettings(this));
             return;
         }
         Node node = selected;
@@ -487,7 +498,7 @@ public class GuiRecipeTree extends GuiScreen {
             return; // Index still building; row shows the hint.
         }
         if (node.producerIdx < 0) {
-            node.producerIdx = 0;
+            node.producerIdx = node.bookmarkIdx >= 0 ? node.bookmarkIdx : 0;
             GTRecipe recipe = node.recipe();
             if (recipe != null) {
                 node.cfg = MachineRegistry.defaultConfig(node.map().unlocalizedName, recipe);
@@ -515,6 +526,7 @@ public class GuiRecipeTree extends GuiScreen {
             } else if (node.fluid != null) {
                 node.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(node.fluid));
             }
+            node.bookmarkIdx = BookmarkHelper.findBookmarked(node.stack, node.fluid, node.producers);
         }
         for (Node child : node.children) {
             refreshProducers(child);
@@ -607,14 +619,23 @@ public class GuiRecipeTree extends GuiScreen {
             if (node.loop) {
                 right = EnumChatFormatting.RED + "loop";
             } else if (node.isRaw()) {
-                right = node.producers.isEmpty() && RecipeIndex.isReady() ? EnumChatFormatting.DARK_GRAY + "raw"
-                    : EnumChatFormatting.GRAY + "raw (click + to craft)";
+                if (node.producers.isEmpty() && RecipeIndex.isReady()) {
+                    right = EnumChatFormatting.DARK_GRAY + "raw";
+                } else if (node.bookmarkIdx >= 0) {
+                    right = EnumChatFormatting.GOLD + "* " + EnumChatFormatting.GRAY + "raw (bookmarked, + crafts)";
+                } else {
+                    right = EnumChatFormatting.GRAY + "raw (click + to craft)";
+                }
             } else if (node.rr != null && !node.rr.ok) {
                 right = EnumChatFormatting.RED + "power!";
             } else {
                 String count = node.machinesNeeded >= 10 ? String.format("%,.0f", Math.ceil(node.machinesNeeded))
                     : String.format("%.1f", node.machinesNeeded);
-                right = EnumChatFormatting.AQUA + count
+                String star = node.producerIdx == node.bookmarkIdx && node.bookmarkIdx >= 0
+                    ? EnumChatFormatting.GOLD + "* "
+                    : "";
+                right = star + EnumChatFormatting.AQUA
+                    + count
                     + "x "
                     + EnumChatFormatting.RESET
                     + node.cfg.preset.name
@@ -678,6 +699,9 @@ public class GuiRecipeTree extends GuiScreen {
             header = EnumChatFormatting.GRAY + node.label + " - no recipe selected";
         } else {
             String recipePos = (node.producerIdx + 1) + "/" + node.producers.size();
+            if (node.producerIdx == node.bookmarkIdx && node.bookmarkIdx >= 0) {
+                recipePos += EnumChatFormatting.GOLD + "*" + EnumChatFormatting.RESET;
+            }
             String power = node.rr != null && node.rr.ok
                 ? String.format("%,d EU/t, %.2fs, %d par", node.rr.eut, node.rr.durationTicks / 20.0, node.rr.parallels)
                 : (node.rr != null ? node.rr.error : "");

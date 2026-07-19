@@ -188,7 +188,7 @@ public class GuiRateCalculator extends GuiScreen {
             String left = rows.get(i) == RowKind.MACHINES ? "-" : "<";
             String right = rows.get(i) == RowKind.MACHINES ? "+" : ">";
             buttonList.add(new GuiButton(i * 2, panelLeft + 64, rowY(i), 20, 20, left));
-            buttonList.add(new GuiButton(i * 2 + 1, panelLeft + 236, rowY(i), 20, 20, right));
+            buttonList.add(new GuiButton(i * 2 + 1, panelLeft + 280, rowY(i), 20, 20, right));
         }
         int fieldY = rowY(rows.size()) + 2;
         targetField = new GuiTextField(fontRendererObj, panelLeft + 64, fieldY, 96, 16);
@@ -342,7 +342,7 @@ public class GuiRateCalculator extends GuiScreen {
             case MACHINES:
                 return String.valueOf(cfg.machines);
             case OUTPUT:
-                return outputs.isEmpty() ? "-" : trim(outputs.get(targetOutput).name, 18);
+                return outputs.isEmpty() ? "-" : trim(outputs.get(targetOutput).name, 30);
         }
         return "";
     }
@@ -380,7 +380,7 @@ public class GuiRateCalculator extends GuiScreen {
         for (int i = 0; i < rows.size(); i++) {
             RowKind kind = rows.get(i);
             fontRendererObj.drawString(rowLabel(kind), panelLeft, rowY(i) + 6, 0xAAAAAA);
-            drawCenteredString(fontRendererObj, rowValue(kind), panelLeft + 160, rowY(i) + 6, 0xFFFFFF);
+            drawCenteredString(fontRendererObj, trim(rowValue(kind), 32), panelLeft + 182, rowY(i) + 6, 0xFFFFFF);
         }
 
         int fieldY = rowY(rows.size()) + 2;

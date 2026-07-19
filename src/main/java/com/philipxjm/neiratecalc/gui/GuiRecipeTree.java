@@ -387,18 +387,20 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.clear();
         int py = height - PANEL_HEIGHT + 22;
         int py2 = py + 22;
+        // Row 1: recipe (fixed) | machine (stretches) | tier (fixed right)
         buttonList.add(new GuiButton(1, 8, py, 14, 20, "<"));
         buttonList.add(new GuiButton(2, 92, py, 14, 20, ">"));
         buttonList.add(new GuiButton(3, 112, py, 14, 20, "<"));
-        buttonList.add(new GuiButton(4, 226, py, 14, 20, ">"));
-        buttonList.add(new GuiButton(5, 246, py, 14, 20, "<"));
-        buttonList.add(new GuiButton(6, 316, py, 14, 20, ">"));
+        buttonList.add(new GuiButton(4, width - 166, py, 14, 20, ">"));
+        buttonList.add(new GuiButton(5, width - 146, py, 14, 20, "<"));
+        buttonList.add(new GuiButton(6, width - 22, py, 14, 20, ">"));
+        // Row 2: amps (fixed) | coils (stretches) | pipe/casing (fixed right)
         buttonList.add(new GuiButton(7, 8, py2, 14, 20, "<"));
         buttonList.add(new GuiButton(8, 66, py2, 14, 20, ">"));
         buttonList.add(new GuiButton(9, 86, py2, 14, 20, "<"));
-        buttonList.add(new GuiButton(10, 210, py2, 14, 20, ">"));
-        buttonList.add(new GuiButton(11, 230, py2, 14, 20, "<"));
-        buttonList.add(new GuiButton(12, 316, py2, 14, 20, ">"));
+        buttonList.add(new GuiButton(10, width - 186, py2, 14, 20, ">"));
+        buttonList.add(new GuiButton(11, width - 166, py2, 14, 20, "<"));
+        buttonList.add(new GuiButton(12, width - 22, py2, 14, 20, ">"));
         buttonList.add(new GuiButton(22, width - 172, 6, 48, 20, "Cfg"));
         buttonList.add(new GuiButton(20, width - 120, 6, 54, 20, "Totals"));
         buttonList.add(new GuiButton(21, width - 62, 6, 54, 20, "Back"));
@@ -795,17 +797,21 @@ public class GuiRecipeTree extends GuiScreen {
 
         int ty = py + 22 + 6;
         MachineConfig cfg = node.cfg;
-        // Row 1: recipe | machine | tier
+        // Row 1: recipe | machine (stretched) | tier
+        int machineCenter = (132 + width - 166) / 2;
+        int machineChars = Math.max(16, (width - 166 - 132) / 6);
         drawCenteredString(fontRendererObj, "recipe", 57, ty, 0xAAAAAA);
         drawCenteredString(
             fontRendererObj,
-            cfg != null ? GuiRateCalculator.trim(cfg.preset.name, 16) : "-",
-            170,
+            cfg != null ? GuiRateCalculator.trim(cfg.preset.name, machineChars) : "-",
+            machineCenter,
             ty,
             0xFFFFFF);
-        drawCenteredString(fontRendererObj, cfg != null ? GTValues.VN[cfg.tier] : "-", 288, ty, 0xFFFFFF);
-        // Row 2: amps | coils | pipe casing
+        drawCenteredString(fontRendererObj, cfg != null ? GTValues.VN[cfg.tier] : "-", width - 75, ty, 0xFFFFFF);
+        // Row 2: amps | coils (stretched) | pipe casing / tiered part
         int ty2 = ty + 22;
+        int coilCenter = (106 + width - 186) / 2;
+        int coilChars = Math.max(16, (width - 186 - 106) / 6);
         drawCenteredString(
             fontRendererObj,
             cfg != null && cfg.preset.multiblock ? cfg.amps + "A" : "-",
@@ -814,17 +820,17 @@ public class GuiRecipeTree extends GuiScreen {
             0xFFFFFF);
         drawCenteredString(
             fontRendererObj,
-            cfg != null && cfg.preset.usesCoils ? GuiRateCalculator.trim(cfg.coilName(), 18) : "-",
-            148,
+            cfg != null && cfg.preset.usesCoils ? GuiRateCalculator.trim(cfg.coilName(), coilChars) : "-",
+            coilCenter,
             ty2,
             0xFFFFFF);
         String extra = "-";
         if (cfg != null && cfg.preset.usesPipeCasing) {
             extra = "pipe: " + cfg.pipeCasingName();
         } else if (cfg != null && cfg.preset.casingLabel != null) {
-            extra = GuiRateCalculator.trim(cfg.preset.casingLabel + ": " + cfg.preset.casingName(cfg.casingTier), 18);
+            extra = GuiRateCalculator.trim(cfg.preset.casingLabel + ": " + cfg.preset.casingName(cfg.casingTier), 22);
         }
-        drawCenteredString(fontRendererObj, extra, 273, ty2, 0xFFFFFF);
+        drawCenteredString(fontRendererObj, extra, width - 94, ty2, 0xFFFFFF);
     }
 
     @Override

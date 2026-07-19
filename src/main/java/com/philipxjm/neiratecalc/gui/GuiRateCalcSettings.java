@@ -13,7 +13,7 @@ import gregtech.api.enums.GTValues;
 /** In-game editor for the calculator defaults; saves straight to the cfg. */
 public class GuiRateCalcSettings extends GuiScreen {
 
-    private static final int PANEL_WIDTH = 280;
+    private static final int PANEL_WIDTH = 360;
     private static final int ROW_HEIGHT = 24;
 
     private final GuiScreen parent;
@@ -33,13 +33,13 @@ public class GuiRateCalcSettings extends GuiScreen {
             int y = rowY(row);
             if (row == 2) {
                 // Prefer-multiblock is a single toggle button.
-                buttonList.add(new GuiButton(4, panelLeft + 150, y, 106, 20, ""));
+                buttonList.add(new GuiButton(4, panelLeft + 160, y, 196, 20, ""));
             } else {
-                buttonList.add(new GuiButton(row * 2, panelLeft + 150, y, 20, 20, "<"));
-                buttonList.add(new GuiButton(row * 2 + 1, panelLeft + 236, y, 20, 20, ">"));
+                buttonList.add(new GuiButton(row * 2, panelLeft + 160, y, 20, 20, "<"));
+                buttonList.add(new GuiButton(row * 2 + 1, panelLeft + 336, y, 20, 20, ">"));
             }
         }
-        buttonList.add(new GuiButton(99, panelLeft + 150, rowY(4) + 6, 106, 20, "Back"));
+        buttonList.add(new GuiButton(99, panelLeft + 160, rowY(4) + 6, 196, 20, "Back"));
     }
 
     private int rowY(int row) {
@@ -123,7 +123,7 @@ public class GuiRateCalcSettings extends GuiScreen {
         int y = rowY(row);
         fontRendererObj.drawString(label, panelLeft, y + 6, 0xAAAAAA);
         if (value != null) {
-            drawCenteredString(fontRendererObj, value, panelLeft + 203, y + 6, 0xFFFFFF);
+            drawCenteredString(fontRendererObj, value, panelLeft + 258, y + 6, 0xFFFFFF);
         }
     }
 

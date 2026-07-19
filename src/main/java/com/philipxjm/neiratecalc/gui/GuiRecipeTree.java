@@ -94,9 +94,12 @@ public class GuiRecipeTree extends GuiScreen {
     }
 
     private final GuiScreen parent;
-    private final Node root;
+    private Node root;
     private GuiTextField targetField;
     private String targetText;
+    /** Set when opened from a bookmark: root resolves once the index is up. */
+    private ItemStack pendingRootStack;
+    private FluidStack pendingRootFluid;
 
     private final List<Node> visible = new ArrayList<Node>();
     private int scroll;
@@ -128,9 +131,66 @@ public class GuiRecipeTree extends GuiScreen {
             root.producerIdx = 0;
         }
         root.bookmarkIdx = BookmarkHelper.findBookmarked(out.stack, out.fluid, root.producers);
-        expand(root);
+        expandChain(root, 0);
         recomputeAll();
         selected = root;
+    }
+
+    /**
+     * Opens the tree for an arbitrary target (K over a bookmark group/item):
+     * the bookmarked chain expands automatically below it.
+     */
+    public GuiRecipeTree(GuiScreen parent, ItemStack stack, FluidStack fluidAlt, double targetPerMin) {
+        this.parent = parent;
+        this.targetText = GuiRateCalculator.fmt(targetPerMin);
+        this.pendingRootStack = stack;
+        this.pendingRootFluid = fluidAlt;
+        RecipeIndex.ensureBuilt();
+        this.root = buildRootFromTarget();
+        recomputeAll();
+        selected = root;
+    }
+
+    private Node buildRootFromTarget() {
+        List<RecipeIndex.Producer> itemProducers = pendingRootStack != null ? RecipeIndex.forItem(pendingRootStack)
+            : java.util.Collections.<RecipeIndex.Producer>emptyList();
+        Node n;
+        if (!itemProducers.isEmpty() || pendingRootFluid == null) {
+            String label = pendingRootStack != null ? pendingRootStack.getDisplayName() : "?";
+            n = new Node(label, pendingRootStack, null, null);
+            n.producers = new ArrayList<RecipeIndex.Producer>(itemProducers);
+        } else {
+            n = new Node(pendingRootFluid.getLocalizedName(), null, pendingRootFluid, null);
+            n.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(pendingRootFluid));
+        }
+        n.requiredPerMin = Math.max(0, parseTarget());
+        n.bookmarkIdx = BookmarkHelper.findBookmarked(n.stack, n.fluid, n.producers);
+        if (!n.producers.isEmpty()) {
+            n.producerIdx = n.bookmarkIdx >= 0 ? n.bookmarkIdx : 0;
+            n.cfg = MachineRegistry.defaultConfig(n.map().unlocalizedName, n.recipe());
+            expandChain(n, 0);
+        }
+        return n;
+    }
+
+    /** Expands a node, then keeps expanding wherever a bookmark chooses. */
+    private void expandChain(Node node, int depth) {
+        expand(node);
+        if (depth > 10) {
+            return;
+        }
+        for (Node child : node.children) {
+            if (child.loop || child.bookmarkIdx < 0 || child.expanded) {
+                continue;
+            }
+            child.producerIdx = child.bookmarkIdx;
+            GTRecipe recipe = child.recipe();
+            if (recipe == null) {
+                continue;
+            }
+            child.cfg = MachineRegistry.defaultConfig(child.map().unlocalizedName, recipe);
+            expandChain(child, depth + 1);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -504,7 +564,7 @@ public class GuiRecipeTree extends GuiScreen {
                 node.cfg = MachineRegistry.defaultConfig(node.map().unlocalizedName, recipe);
             }
         }
-        expand(node);
+        expandChain(node, 0);
     }
 
     @Override
@@ -514,7 +574,12 @@ public class GuiRecipeTree extends GuiScreen {
         // fill them in once it comes up.
         if (!indexSeen && RecipeIndex.isReady()) {
             indexSeen = true;
-            refreshProducers(root);
+            if (root.producerIdx < 0 && (pendingRootStack != null || pendingRootFluid != null)) {
+                root = buildRootFromTarget();
+                selected = root;
+            } else {
+                refreshProducers(root);
+            }
             recomputeAll();
         }
     }

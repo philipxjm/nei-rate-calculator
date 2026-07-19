@@ -26,9 +26,114 @@ public final class BookmarkHelper {
     /** BookmarkPanel.storage and BookmarkStorage.namespaces are protected. */
     private static Field storageField;
     private static Field namespacesField;
+    private static java.lang.reflect.Method activeGridMethod;
+    private static java.lang.reflect.Method mouseContextMethod;
     private static boolean broken;
 
     private BookmarkHelper() {}
+
+    /** What a K-press over the bookmark panel should calculate. */
+    public static class GroupTarget {
+
+        public final ItemStack stack;
+        /** Fluid form of the stack, used when nothing crafts the item. */
+        public final FluidStack fluidAlt;
+
+        GroupTarget(ItemStack stack, FluidStack fluidAlt) {
+            this.stack = stack;
+            this.fluidAlt = fluidAlt;
+        }
+    }
+
+    private static Object storage() throws Exception {
+        if (storageField == null) {
+            storageField = findField(ItemPanels.bookmarkPanel.getClass(), "storage");
+            storageField.setAccessible(true);
+        }
+        return storageField.get(ItemPanels.bookmarkPanel);
+    }
+
+    private static BookmarkGrid activeGrid() {
+        if (broken) {
+            return null;
+        }
+        try {
+            Object storage = storage();
+            if (activeGridMethod == null) {
+                activeGridMethod = storage.getClass()
+                    .getMethod("getActiveGrid");
+            }
+            return (BookmarkGrid) activeGridMethod.invoke(storage);
+        } catch (Throwable t) {
+            broken = true;
+            NEIRateCalc.LOG.error("Cannot read NEI bookmark grid", t);
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a K-press over the bookmark panel: hovering a bookmark group
+     * (its bracket or any of its items) targets the group's top product;
+     * hovering an ungrouped item targets that item. Null when the mouse is
+     * not over anything usable.
+     */
+    public static GroupTarget targetUnderMouse(int mouseX, int mouseY) {
+        try {
+            if (!ItemPanels.bookmarkPanel.contains(mouseX, mouseY)) {
+                return null;
+            }
+            BookmarkGrid grid = activeGrid();
+            if (grid == null) {
+                return null;
+            }
+            int groupId = -1;
+            BookmarkItem hovered = null;
+            codechicken.nei.bookmark.BookmarksGridSlot slot = ItemPanels.bookmarkPanel.getSlotMouseOver(mouseX, mouseY);
+            if (slot != null) {
+                groupId = slot.getGroupId();
+                hovered = slot.getBookmarkItem();
+            } else {
+                if (mouseContextMethod == null) {
+                    mouseContextMethod = BookmarkGrid.class.getDeclaredMethod("getMouseContext", int.class, int.class);
+                    mouseContextMethod.setAccessible(true);
+                }
+                Object ctx = mouseContextMethod.invoke(grid, mouseX, mouseY);
+                if (ctx instanceof BookmarkGrid.BookmarkMouseContext) {
+                    groupId = ((BookmarkGrid.BookmarkMouseContext) ctx).groupId;
+                }
+            }
+
+            BookmarkItem rootItem = null;
+            if (groupId > BookmarkGrid.DEFAULT_GROUP_ID) {
+                // Top non-ingredient entry of the group = the final product.
+                for (int i = 0; i < grid.size(); i++) {
+                    BookmarkItem item = grid.getBookmarkItem(i);
+                    if (item == null || item.groupId != groupId || item.itemStack == null) {
+                        continue;
+                    }
+                    if (item.type != BookmarkItem.BookmarkItemType.INGREDIENT) {
+                        rootItem = item;
+                        break;
+                    }
+                    if (rootItem == null) {
+                        rootItem = item;
+                    }
+                }
+            } else if (hovered != null) {
+                rootItem = hovered;
+            }
+            if (rootItem == null || rootItem.itemStack == null) {
+                return null;
+            }
+            return new GroupTarget(rootItem.itemStack, StackInfo.getFluid(rootItem.itemStack));
+        } catch (Throwable t) {
+            if (!broken) {
+                broken = true;
+                NEIRateCalc.LOG.error("Bookmark panel lookup failed", t);
+            }
+            return null;
+        }
+    }
 
     @SuppressWarnings("unchecked")
     private static List<BookmarkGrid> allGrids() {
@@ -37,11 +142,7 @@ public final class BookmarkHelper {
             return grids;
         }
         try {
-            if (storageField == null) {
-                storageField = findField(ItemPanels.bookmarkPanel.getClass(), "storage");
-                storageField.setAccessible(true);
-            }
-            Object storage = storageField.get(ItemPanels.bookmarkPanel);
+            Object storage = storage();
             if (namespacesField == null) {
                 namespacesField = findField(storage.getClass(), "namespaces");
                 namespacesField.setAccessible(true);

@@ -7,7 +7,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.inventory.GuiContainer;
 
 import com.philipxjm.neiratecalc.NEIRateCalc;
+import com.philipxjm.neiratecalc.calc.BookmarkHelper;
 import com.philipxjm.neiratecalc.gui.GuiRateCalculator;
+import com.philipxjm.neiratecalc.gui.GuiRecipeTree;
 
 import codechicken.lib.gui.GuiDraw;
 import codechicken.nei.NEIClientConfig;
@@ -54,20 +56,33 @@ public class RateCalcInputHandler implements IContainerInputHandler {
 
     @Override
     public boolean lastKeyTyped(GuiContainer gui, char keyChar, int keyID) {
-        if (!(gui instanceof GuiRecipe)) {
-            return false;
-        }
         if (!NEIClientConfig.isKeyHashDown(KEY_ID)) {
             return false;
         }
-        GuiRecipe<?> recipeGui = (GuiRecipe<?>) gui;
+        Point mouse = GuiDraw.getMousePosition();
+        if (gui instanceof GuiRecipe && tryOpenFromRecipeWidget((GuiRecipe<?>) gui, mouse)) {
+            return true;
+        }
+        return tryOpenFromBookmarks(gui, mouse);
+    }
 
+    /** K over a bookmark group or item opens the tree for its top product. */
+    private boolean tryOpenFromBookmarks(GuiContainer gui, Point mouse) {
+        BookmarkHelper.GroupTarget target = BookmarkHelper.targetUnderMouse(mouse.x, mouse.y);
+        if (target == null) {
+            return false;
+        }
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new GuiRecipeTree(gui, target.stack, target.fluidAlt, 64));
+        return true;
+    }
+
+    private boolean tryOpenFromRecipeWidget(GuiRecipe<?> recipeGui, Point mouse) {
         WidgetContainer container = getWidgetContainer(recipeGui);
         if (container == null) {
             return false;
         }
 
-        Point mouse = GuiDraw.getMousePosition();
         Widget widget = container.getWidgetUnderMouse(mouse.x, mouse.y);
         if (!(widget instanceof NEIRecipeWidget)) {
             return false;

@@ -164,6 +164,39 @@ public final class BookmarkHelper {
         throw new NoSuchFieldException(name);
     }
 
+    /**
+     * True when this item/fluid appears anywhere in the bookmark panel (as a
+     * plain bookmark, a chain ingredient, or a result) — the user's signal
+     * that they care how it gets crafted.
+     */
+    public static boolean isBookmarked(ItemStack stack, FluidStack fluid) {
+        try {
+            for (BookmarkGrid grid : allGrids()) {
+                for (int i = 0; i < grid.size(); i++) {
+                    BookmarkItem item = grid.getBookmarkItem(i);
+                    if (item == null || item.itemStack == null || item.itemStack.getItem() == null) {
+                        continue;
+                    }
+                    if (stack != null && RecipeIndex.itemKey(item.itemStack) == RecipeIndex.itemKey(stack)) {
+                        return true;
+                    }
+                    if (fluid != null) {
+                        FluidStack asFluid = StackInfo.getFluid(item.itemStack);
+                        if (asFluid != null && asFluid.getFluid() == fluid.getFluid()) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            if (!broken) {
+                broken = true;
+                NEIRateCalc.LOG.error("Bookmark lookup failed", t);
+            }
+        }
+        return false;
+    }
+
     private static List<Recipe.RecipeId> bookmarkedRecipeIds() {
         List<Recipe.RecipeId> ids = new ArrayList<Recipe.RecipeId>();
         for (BookmarkGrid grid : allGrids()) {

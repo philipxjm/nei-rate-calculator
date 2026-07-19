@@ -7,15 +7,15 @@ import com.philipxjm.neiratecalc.calc.MachinePreset.SpeedRule;
 import gregtech.api.util.GTRecipe;
 
 /**
- * The multiblock machine table: parallels, speed, EU and overclock rules per
- * recipe map, extracted from GT5-Unofficial 5.09.52.594 sources (the exact
- * version in GTNH 2.9.0-beta-1). File:line references are to that tree.
+ * Machine bonus table extracted from GT5-Unofficial 5.09.52.594 sources
+ * (the version shipped in GTNH 2.9.0-beta-1). Speed values are duration
+ * multipliers: lower is faster.
  */
 final class MultiblockData {
 
     private MultiblockData() {}
 
-    /** HeatingCoilLevel.getTier(): 0 = Cupronickel, 1 = Kanthal, ... */
+    // HeatingCoilLevel.getTier(): 0 = Cupronickel, 1 = Kanthal, ...
     private static int coilTier(MachineConfig cfg) {
         return Math.max(0, cfg.coilOrdinal - 2);
     }
@@ -45,7 +45,6 @@ final class MultiblockData {
             "gtnhlanth.recipe.digester",
             "gtnhlanth.recipe.disstank");
 
-        // ---------------- Blast furnace ----------------
         MachineRegistry.addMulti(
             "gt.recipe.blastfurnace",
             MachinePreset.multi("ebf", "Electric Blast Furnace")
@@ -54,7 +53,7 @@ final class MultiblockData {
                 .build());
         MachineRegistry.addMulti(
             "gt.recipe.blastfurnace",
-            // MTEAdvEBF: 8 parallels, 120% faster, 90% EU, coil heat only
+
             MachinePreset.multi("volcanus", "Volcanus")
                 .oc(OCKind.HEAT)
                 .parallels(8)
@@ -70,7 +69,6 @@ final class MultiblockData {
                 .note("Feed with multi-amp/laser hatches; set Amps accordingly")
                 .build());
 
-        // ---------------- Large chemical reactor ----------------
         MachineRegistry.addMulti(
             "gt.recipe.largechemicalreactor",
             MachinePreset.multi("lcr", "Large Chemical Reactor")
@@ -83,22 +81,22 @@ final class MultiblockData {
                 .parallels(256)
                 .build());
 
-        // ---------------- Distillation ----------------
         MachineRegistry.addMulti(
             "gt.recipe.distillationtower",
             MachinePreset.multi("dt", "Distillation Tower")
                 .build());
         MachineRegistry.addMulti(
             "gt.recipe.distillationtower",
-            // MTEAdvDistillationTower tower mode: 12 parallels, 250% speed
+
             MachinePreset.multi("dangote_t", "Dangote Distillus (tower)")
                 .parallels(12)
                 .speed(1.0 / 3.5)
                 .build());
         MachineRegistry.addMulti(
             "gt.recipe.distillationtower",
-            // MTEMegaDistillationTower tower mode; setSpeedBonus(1.2) is a
-            // duration x1.2 as coded (tooltip claims faster - upstream bug)
+
+            // As coded upstream, setSpeedBonus(1.2) makes it 20% slower even
+            // though the tooltip claims 120% speed.
             MachinePreset.multi("mdt_t", "Mega Distillation Tower")
                 .parallels(256)
                 .speed(1.2)
@@ -133,7 +131,6 @@ final class MultiblockData {
                 .euModifier(0.5)
                 .build());
 
-        // ---------------- Vacuum freezer ----------------
         MachineRegistry.addMulti(
             "gt.recipe.vacuumfreezer",
             MachinePreset.multi("vf", "Vacuum Freezer")
@@ -152,12 +149,11 @@ final class MultiblockData {
                 .note("T2 subspace-coolant perfect OCs not modeled")
                 .build());
 
-        // ---------------- Multi smelter ----------------
         MachineRegistry.addMulti(
             "gt.recipe.furnace",
-            // MTEMultiFurnace: fixed 4 EU/t x 128 ticks per item, parallels
-            // 4 << (coil ordinal - 1); modifiers below rebase whatever the
-            // NEI furnace recipe carries onto those constants.
+
+            // Runs a fixed 4 EU/t x 128 ticks per item regardless of the NEI
+            // recipe's numbers; the speed/EU rules rebase onto those.
             MachinePreset.multi("multismelter", "Multi Smelter")
                 .coils()
                 .parallels(new ParallelRule() {
@@ -183,7 +179,6 @@ final class MultiblockData {
                 })
                 .build());
 
-        // ---------------- Pyrolyse oven ----------------
         MachineRegistry.addMulti(
             "gt.recipe.pyro",
             MachinePreset.multi("pyrolyse", "Pyrolyse Oven")
@@ -198,7 +193,6 @@ final class MultiblockData {
                 .note("Kanthal coils = 100% speed; each tier above is faster")
                 .build());
 
-        // ---------------- Oil cracking ----------------
         EuRule crackerEu = new EuRule() {
 
             @Override
@@ -220,13 +214,11 @@ final class MultiblockData {
                 .eu(crackerEu)
                 .build());
 
-        // ---------------- Implosion ----------------
         MachineRegistry.addMulti(
             "gt.recipe.implosioncompressor",
             MachinePreset.multi("implosion", "Implosion Compressor")
                 .build());
 
-        // ---------------- Large Fluid Extractor ----------------
         MachineRegistry.addMulti(
             "gt.recipe.fluidextractor",
             MachinePreset.multi("lfe", "Large Fluid Extractor")
@@ -255,7 +247,6 @@ final class MultiblockData {
                 })
                 .build());
 
-        // ---------------- GT++ industrial machines ----------------
         MachineRegistry.addMulti(
             "gt.recipe.macerator",
             MachinePreset.multi("macstack", "Industrial Maceration Stack")
@@ -408,7 +399,7 @@ final class MultiblockData {
                 .build());
         MachineRegistry.addMulti(
             "gt.recipe.alloysmelter",
-            // Zyngen: heat OC with 2x coil heat, parallels coil level x tier
+
             MachinePreset.multi("zyngen", "Zyngen")
                 .oc(OCKind.HEAT)
                 .coilHeatMultiplier(2.0)
@@ -460,7 +451,6 @@ final class MultiblockData {
             MachinePreset.multi("abs", "Alloy Blast Smelter")
                 .build());
 
-        // ---------------- goodgenerator ----------------
         MachineRegistry.addMulti(
             "gg.recipe.precise_assembler",
             MachinePreset.multi("prass", "Precise Auto-Assembler")
@@ -506,8 +496,7 @@ final class MultiblockData {
 
                     @Override
                     public double durationModifier(MachineConfig cfg, GTRecipe recipe) {
-                        // Recipe time halves per casing tier above the
-                        // component's tier (mSpecialValue).
+
                         int diff = cfg.casingTier + 1 - Math.max(0, recipe.mSpecialValue);
                         return Math.pow(2, -diff);
                     }
@@ -528,7 +517,6 @@ final class MultiblockData {
                 .note("Draws no EU at the controller; accelerators power it")
                 .build());
 
-        // ---------------- kubatech / lanthanides ----------------
         MachineRegistry.addMulti(
             "kubatech.defusioncrafter",
             MachinePreset.multi("defc", "DE Fusion Crafter")

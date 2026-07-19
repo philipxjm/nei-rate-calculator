@@ -25,18 +25,14 @@ import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
 import gregtech.nei.GTNEIDefaultHandler;
 
-/**
- * Opens the rate calculator when the calculator key is pressed while hovering
- * a GregTech recipe inside NEI's recipe viewer.
- */
 public class RateCalcInputHandler implements IContainerInputHandler {
 
     public static final String KEY_ID = "neiratecalc.calculate";
 
-    /** GuiRecipe keeps its widget tree in a private ScrollContainer. */
     private static Field containerField;
     private static boolean containerLookupFailed;
 
+    // GuiRecipe keeps its widget tree in a private field.
     private static WidgetContainer getWidgetContainer(GuiRecipe<?> gui) {
         if (containerLookupFailed) {
             return null;
@@ -66,7 +62,6 @@ public class RateCalcInputHandler implements IContainerInputHandler {
         return tryOpenFromBookmarks(gui, mouse);
     }
 
-    /** K over a bookmark group or item opens the tree for its top product. */
     private boolean tryOpenFromBookmarks(GuiContainer gui, Point mouse) {
         BookmarkHelper.GroupTarget target = BookmarkHelper.targetUnderMouse(mouse.x, mouse.y);
         if (target == null) {
@@ -95,9 +90,8 @@ public class RateCalcInputHandler implements IContainerInputHandler {
         IRecipeHandler handler = ref.handler;
         int recipeIndex = ref.recipeIndex;
 
-        // The viewer may wrap handlers for search filtering
-        // (SearchRecipeHandler is package-private, hence reflection);
-        // translate the index back into the real handler's recipe space.
+        // SearchRecipeHandler is package-private; unwrap it reflectively and
+        // translate the filtered index back into the real handler's space.
         if ("codechicken.nei.recipe.SearchRecipeHandler".equals(
             handler.getClass()
                 .getName())) {

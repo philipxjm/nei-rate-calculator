@@ -4,16 +4,14 @@ import java.io.File;
 
 import net.minecraftforge.common.config.Configuration;
 
-/** Mod settings from config/neiratecalc.cfg, editable in-game. */
 public final class Config {
 
-    /** Default machine tier for new calculations; -1 = recipe minimum. */
     public static int defaultTier = -1;
-    /** Default energy hatch amperage assumed for multiblocks. */
+
     public static int defaultAmps = 2;
-    /** Pick a multiblock over the singleblock when one exists. */
+
     public static boolean preferMultiblock = true;
-    /** Global cap on multiblock parallels (models partial builds). */
+
     public static int maxParallels = 256;
 
     private static Configuration cfg;
@@ -58,7 +56,6 @@ public final class Config {
         }
     }
 
-    /** Persist the current field values back to disk. */
     public static void save() {
         if (cfg == null) {
             return;

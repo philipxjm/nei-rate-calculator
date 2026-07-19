@@ -11,10 +11,6 @@ import com.philipxjm.neiratecalc.Config;
 
 import gregtech.api.util.GTRecipe;
 
-/**
- * Machine choices per recipe map (keyed by the map's unlocalizedName, which is
- * also its NEI handler identity). Multiblock entries live in MultiblockData.
- */
 public final class MachineRegistry {
 
     public static final MachinePreset SINGLEBLOCK = MachinePreset.single()
@@ -22,9 +18,9 @@ public final class MachineRegistry {
         .build();
 
     private static final Map<String, List<MachinePreset>> MULTIS = new HashMap<String, List<MachinePreset>>();
-    /** Recipe maps with no singleblock machine (EBF, assline, GT++ maps...). */
+
     private static final Set<String> MULTI_ONLY = new HashSet<String>();
-    /** Remembers the last configuration used per recipe map this session. */
+
     private static final Map<String, MachineConfig> LAST_USED = new HashMap<String, MachineConfig>();
 
     private static boolean loaded;
@@ -53,7 +49,6 @@ public final class MachineRegistry {
         }
     }
 
-    /** All machine choices for a recipe map; never empty. */
     public static List<MachinePreset> presetsFor(String mapUnlocalizedName) {
         ensureLoaded();
         List<MachinePreset> result = new ArrayList<MachinePreset>();
@@ -68,10 +63,6 @@ public final class MachineRegistry {
         return result;
     }
 
-    /**
-     * A fresh config for this map+recipe: last session choice if compatible,
-     * otherwise defaults (config tier, recipe minimum tier, fitting coils).
-     */
     public static MachineConfig defaultConfig(String mapUnlocalizedName, GTRecipe recipe) {
         ensureLoaded();
         int minTier = MachineConfig.minTierFor(recipe.mEUt);

@@ -5,9 +5,8 @@ import gregtech.api.util.GTRecipe;
 import gregtech.api.util.OverclockCalculator;
 
 /**
- * Mirrors GregTech's ProcessingLogic sequence: parallels are limited by the
- * EU budget first (ParallelHelper), then the whole parallel batch overclocks
- * (OverclockCalculator with amperage OC for multiblocks).
+ * Mirrors GregTech's ProcessingLogic order: parallels are limited by the EU
+ * budget first, then the whole batch overclocks (amperage OC for multis).
  */
 public final class RateMath {
 
@@ -17,7 +16,7 @@ public final class RateMath {
         try {
             return computeInner(recipe, cfg);
         } catch (Throwable t) {
-            // Never crash the GUI over math; fall back to unclocked values.
+
             int duration = Math.max(1, recipe.mDuration);
             return RateResult.of(1, duration, recipe.mEUt);
         }

@@ -2,25 +2,18 @@ package com.philipxjm.neiratecalc.calc;
 
 import gregtech.api.util.GTRecipe;
 
-/**
- * Static description of one machine choice for a recipe map: a singleblock
- * tier ladder or a specific multiblock with its parallel/speed/EU rules.
- */
 public class MachinePreset {
 
-    /** Max parallels as a function of the user's structure/tier choices. */
     public interface ParallelRule {
 
         int maxParallels(MachineConfig cfg, GTRecipe recipe);
     }
 
-    /** Base duration multiplier (lower = faster) for the user's choices. */
     public interface SpeedRule {
 
         double durationModifier(MachineConfig cfg, GTRecipe recipe);
     }
 
-    /** EU/t multiplier (lower = cheaper) for the user's choices. */
     public interface EuRule {
 
         double euModifier(MachineConfig cfg, GTRecipe recipe);
@@ -31,11 +24,11 @@ public class MachinePreset {
     public final boolean multiblock;
     public final boolean usesCoils;
     public final boolean usesPipeCasing;
-    /** Adds the EBF's +100K heat capacity per energy hatch tier above MV. */
+
     public final boolean tierHeatBonus;
-    /** Multiplier on coil heat when computing machine heat (Zyngen: 2x). */
+
     public final double coilHeatMultiplier;
-    /** Extra tiered structure part (anvil, solenoid, unit casing...). */
+
     public final String casingLabel;
     public final int casingMin;
     public final int casingMax;

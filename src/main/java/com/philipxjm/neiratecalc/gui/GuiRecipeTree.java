@@ -29,11 +29,6 @@ import gregtech.api.enums.HeatingCoilLevel;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
 
-/**
- * Full production-chain calculator: the target recipe at the root, inputs
- * expandable into their own producing recipes, each node with its own machine
- * choice. Collapsed inputs count as raw materials in the totals view.
- */
 public class GuiRecipeTree extends GuiScreen {
 
     private static final int ROW_HEIGHT = 11;
@@ -43,15 +38,15 @@ public class GuiRecipeTree extends GuiScreen {
     private static class Node {
 
         final String label;
-        final ItemStack stack; // null for fluids
-        final FluidStack fluid; // null for items
+        final ItemStack stack;
+        final FluidStack fluid;
         final Node parent;
         final int depth;
 
         double requiredPerMin;
         List<RecipeIndex.Producer> producers = new ArrayList<RecipeIndex.Producer>();
         int producerIdx = -1;
-        /** Index of the NEI-bookmarked recipe among producers, -1 if none. */
+
         int bookmarkIdx = -1;
         MachineConfig cfg;
         RateResult rr;
@@ -87,7 +82,6 @@ public class GuiRecipeTree extends GuiScreen {
             return producerIdx >= 0 && producerIdx < producers.size() ? producers.get(producerIdx).map : null;
         }
 
-        /** Collapsed or recipe-less nodes are raw-material demands. */
         boolean isRaw() {
             return !expanded || recipe() == null;
         }
@@ -97,10 +91,10 @@ public class GuiRecipeTree extends GuiScreen {
     private Node root;
     private GuiTextField targetField;
     private String targetText;
-    /** Set when opened from a bookmark: root resolves once the index is up. */
+
     private ItemStack pendingRootStack;
     private FluidStack pendingRootFluid;
-    /** Non-null when opened from a bookmark group: recipes stay inside it. */
+
     private final BookmarkHelper.Scope scope;
 
     private final List<Node> visible = new ArrayList<Node>();
@@ -119,8 +113,6 @@ public class GuiRecipeTree extends GuiScreen {
         root.requiredPerMin = targetPerMin;
         root.cfg = rootCfg;
 
-        // Offer alternative producers for the root too, once the index knows
-        // them; always keep the recipe the user came from in the list.
         List<RecipeIndex.Producer> known = out.stack != null ? RecipeIndex.forItem(out.stack)
             : RecipeIndex.forFluid(out.fluid);
         for (RecipeIndex.Producer p : known) {
@@ -139,10 +131,6 @@ public class GuiRecipeTree extends GuiScreen {
         selected = root;
     }
 
-    /**
-     * Opens the tree for an arbitrary target (K over a bookmark group/item):
-     * the bookmarked chain expands automatically below it.
-     */
     public GuiRecipeTree(GuiScreen parent, ItemStack stack, FluidStack fluidAlt, double targetPerMin,
         BookmarkHelper.Scope scope) {
         this.parent = parent;
@@ -178,11 +166,6 @@ public class GuiRecipeTree extends GuiScreen {
         return n;
     }
 
-    /**
-     * Expands a node, then keeps expanding every input that a bookmarked
-     * recipe (within the scope) produces. Inputs without a saved recipe stay
-     * collapsed as raw materials, even if they appear as chain ingredients.
-     */
     private void expandChain(Node node, int depth) {
         if (!node.expanded) {
             expand(node);
@@ -203,10 +186,6 @@ public class GuiRecipeTree extends GuiScreen {
             expandChain(child, depth + 1);
         }
     }
-
-    // ------------------------------------------------------------------
-    // Tree building and math
-    // ------------------------------------------------------------------
 
     private void expand(Node node) {
         GTRecipe recipe = node.recipe();
@@ -254,7 +233,6 @@ public class GuiRecipeTree extends GuiScreen {
         }
     }
 
-    /** Chance-weighted units of this node's target per craft of its recipe. */
     private static double outputPerCraft(Node node) {
         GTRecipe recipe = node.recipe();
         if (recipe == null) {
@@ -305,7 +283,7 @@ public class GuiRecipeTree extends GuiScreen {
         if (!node.expanded) {
             return;
         }
-        // Distribute demand: each input needs amount x crafts/min of parent.
+
         for (Node child : node.children) {
             double perCraft = child.stack != null ? child.stack.stackSize : child.fluid.amount;
             child.requiredPerMin = perCraft * node.craftsPerMinNeeded;
@@ -330,14 +308,10 @@ public class GuiRecipeTree extends GuiScreen {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Totals
-    // ------------------------------------------------------------------
-
     private static class Totals {
 
-        final Map<String, double[]> raw = new LinkedHashMap<String, double[]>(); // name -> {perMin, isFluid}
-        final Map<String, double[]> machines = new LinkedHashMap<String, double[]>(); // label -> {count}
+        final Map<String, double[]> raw = new LinkedHashMap<String, double[]>();
+        final Map<String, double[]> machines = new LinkedHashMap<String, double[]>();
         double totalEut;
     }
 
@@ -374,10 +348,6 @@ public class GuiRecipeTree extends GuiScreen {
         }
     }
 
-    // ------------------------------------------------------------------
-    // GUI plumbing
-    // ------------------------------------------------------------------
-
     private int visibleRows() {
         return Math.max(1, (height - PANEL_HEIGHT - LIST_TOP - 4) / ROW_HEIGHT);
     }
@@ -387,14 +357,14 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.clear();
         int py = height - PANEL_HEIGHT + 22;
         int py2 = py + 22;
-        // Row 1: recipe (fixed) | machine (stretches) | tier (fixed right)
+
         buttonList.add(new GuiButton(1, 8, py, 14, 20, "<"));
         buttonList.add(new GuiButton(2, 92, py, 14, 20, ">"));
         buttonList.add(new GuiButton(3, 112, py, 14, 20, "<"));
         buttonList.add(new GuiButton(4, width - 166, py, 14, 20, ">"));
         buttonList.add(new GuiButton(5, width - 146, py, 14, 20, "<"));
         buttonList.add(new GuiButton(6, width - 22, py, 14, 20, ">"));
-        // Row 2: amps (fixed) | coils (stretches) | pipe/casing (fixed right)
+
         buttonList.add(new GuiButton(7, 8, py2, 14, 20, "<"));
         buttonList.add(new GuiButton(8, 66, py2, 14, 20, ">"));
         buttonList.add(new GuiButton(9, 86, py2, 14, 20, "<"));
@@ -498,7 +468,7 @@ public class GuiRecipeTree extends GuiScreen {
             return;
         }
         node.producerIdx = (node.producerIdx + dir + node.producers.size()) % node.producers.size();
-        node.cfg = null; // re-derive machine choice for the new recipe map
+        node.cfg = null;
         if (node.expanded) {
             rebuildChildren(node);
         }
@@ -564,11 +534,11 @@ public class GuiRecipeTree extends GuiScreen {
             return;
         }
         if (node.producers.isEmpty() && RecipeIndex.isReady()) {
-            // Nothing produces this: genuinely raw.
+
             return;
         }
         if (!RecipeIndex.isReady()) {
-            return; // Index still building; row shows the hint.
+            return;
         }
         if (node.producerIdx < 0) {
             node.producerIdx = node.bookmarkIdx >= 0 ? node.bookmarkIdx : 0;
@@ -583,8 +553,7 @@ public class GuiRecipeTree extends GuiScreen {
     @Override
     public void updateScreen() {
         targetField.updateCursorCounter();
-        // Nodes built before the index finished have empty producer lists;
-        // fill them in once it comes up.
+
         if (!indexSeen && RecipeIndex.isReady()) {
             indexSeen = true;
             if (root.producerIdx < 0 && (pendingRootStack != null || pendingRootFluid != null)) {
@@ -592,7 +561,7 @@ public class GuiRecipeTree extends GuiScreen {
                 selected = root;
             } else {
                 refreshProducers(root);
-                // Late-arriving producers may unlock bookmarked steps.
+
                 expandChain(root, 0);
             }
             recomputeAll();
@@ -630,10 +599,6 @@ public class GuiRecipeTree extends GuiScreen {
             return -1;
         }
     }
-
-    // ------------------------------------------------------------------
-    // Drawing
-    // ------------------------------------------------------------------
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
@@ -797,7 +762,7 @@ public class GuiRecipeTree extends GuiScreen {
 
         int ty = py + 22 + 6;
         MachineConfig cfg = node.cfg;
-        // Row 1: recipe | machine (stretched) | tier
+
         int machineCenter = (132 + width - 166) / 2;
         int machineChars = Math.max(16, (width - 166 - 132) / 6);
         drawCenteredString(fontRendererObj, "recipe", 57, ty, 0xAAAAAA);
@@ -808,7 +773,7 @@ public class GuiRecipeTree extends GuiScreen {
             ty,
             0xFFFFFF);
         drawCenteredString(fontRendererObj, cfg != null ? GTValues.VN[cfg.tier] : "-", width - 75, ty, 0xFFFFFF);
-        // Row 2: amps | coils (stretched) | pipe casing / tiered part
+
         int ty2 = ty + 22;
         int coilCenter = (106 + width - 186) / 2;
         int coilChars = Math.max(16, (width - 186 - 106) / 6);

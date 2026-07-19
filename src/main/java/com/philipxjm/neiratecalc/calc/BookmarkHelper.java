@@ -15,15 +15,8 @@ import codechicken.nei.bookmark.BookmarkItem;
 import codechicken.nei.recipe.Recipe;
 import codechicken.nei.recipe.StackInfo;
 
-/**
- * Reads NEI's bookmark panel so a bookmarked recipe becomes the preferred
- * producer in the tree. Bookmarks store a RecipeId (handler name = the recipe
- * map/category unlocalizedName, result, ingredients); we match that back onto
- * the indexed GT recipes.
- */
 public final class BookmarkHelper {
 
-    /** BookmarkPanel.storage and BookmarkStorage.namespaces are protected. */
     private static Field storageField;
     private static Field namespacesField;
     private static java.lang.reflect.Method activeGridMethod;
@@ -32,10 +25,6 @@ public final class BookmarkHelper {
 
     private BookmarkHelper() {}
 
-    /**
-     * Restricts recipe lookups to one bookmark group (the tree K was pressed
-     * on); null scope means all bookmarks everywhere.
-     */
     public static class Scope {
 
         final BookmarkGrid grid;
@@ -47,15 +36,14 @@ public final class BookmarkHelper {
         }
     }
 
-    /** What a K-press over the bookmark panel should calculate. */
     public static class GroupTarget {
 
         public final ItemStack stack;
-        /** Fluid form of the stack, used when nothing crafts the item. */
+
         public final FluidStack fluidAlt;
-        /** The amount configured on the bookmark, as target per minute. */
+
         public final double amount;
-        /** Recipe lookups stay inside the group that was clicked. */
+
         public final Scope scope;
 
         GroupTarget(ItemStack stack, FluidStack fluidAlt, double amount, Scope scope) {
@@ -92,12 +80,6 @@ public final class BookmarkHelper {
         }
     }
 
-    /**
-     * Resolves a K-press over the bookmark panel: hovering a bookmark group
-     * (its bracket or any of its items) targets the group's top product;
-     * hovering an ungrouped item targets that item. Null when the mouse is
-     * not over anything usable.
-     */
     public static GroupTarget targetUnderMouse(int mouseX, int mouseY) {
         try {
             if (!ItemPanels.bookmarkPanel.contains(mouseX, mouseY)) {
@@ -126,7 +108,7 @@ public final class BookmarkHelper {
 
             BookmarkItem rootItem = null;
             if (groupId > BookmarkGrid.DEFAULT_GROUP_ID) {
-                // Top non-ingredient entry of the group = the final product.
+
                 for (int i = 0; i < grid.size(); i++) {
                     BookmarkItem item = grid.getBookmarkItem(i);
                     if (item == null || item.groupId != groupId || item.itemStack == null) {
@@ -187,11 +169,8 @@ public final class BookmarkHelper {
         throw new NoSuchFieldException(name);
     }
 
-    /**
-     * The expansion gate: a non-ingredient bookmark entry carrying a recipe
-     * whose stack IS the target — i.e. the bookmark tree contains something
-     * that produces this item/fluid as a product.
-     */
+    // Expansion gate: a non-ingredient entry whose stack IS the target, i.e.
+    // the bookmark tree contains something that produces it.
     private static BookmarkItem findResultEntry(ItemStack stack, FluidStack fluid, Scope scope) {
         List<BookmarkGrid> grids;
         if (scope != null) {
@@ -228,23 +207,10 @@ public final class BookmarkHelper {
         return null;
     }
 
-    /**
-     * Index into producers of the recipe the user bookmarked for this target,
-     * or -1 when no bookmark matches.
-     */
     public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers) {
         return findBookmarked(stack, fluid, producers, null);
     }
 
-    /**
-     * Scoped variant: only recipes bookmarked inside the given group count.
-     * <p>
-     * The rule mirrors ShadowTheAge's calculator: an ingredient expands only
-     * when the bookmark tree holds an entry that PRODUCES it (a RESULT/plain
-     * recipe entry with the ingredient as its stack). That entry's RecipeId
-     * then just identifies which producer to select — recipe map name plus
-     * ingredient overlap — with the first producer as fallback.
-     */
     public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers,
         Scope scope) {
         if (producers == null || producers.isEmpty()) {
@@ -278,7 +244,6 @@ public final class BookmarkHelper {
         return -1;
     }
 
-    /** Returns {matched, total} over the bookmark's usable ingredients. */
     private static int[] ingredientMatch(Recipe.RecipeId rid, gregtech.api.util.GTRecipe recipe) {
         int matched = 0;
         int total = 0;

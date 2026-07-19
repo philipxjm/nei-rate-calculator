@@ -26,11 +26,6 @@ import gregtech.api.enums.HeatingCoilLevel;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
 
-/**
- * The in-game rates calculator: pick a machine (singleblock tier or a real
- * multiblock with its parallel/speed bonuses), see per-minute rates, and size
- * a bank of machines for a target rate. From here the recipe tree opens.
- */
 public class GuiRateCalculator extends GuiScreen {
 
     private static final int PANEL_WIDTH = 320;
@@ -42,14 +37,13 @@ public class GuiRateCalculator extends GuiScreen {
     private final RecipeMap<?> recipeMap;
     private final GTRecipe recipe;
 
-    /** Combined item+fluid outputs for rate display and target selection. */
     static class OutputEntry {
 
         final String name;
-        final double amountPerCraft; // chance-weighted
-        final int chance; // 1..10000
-        final ItemStack stack; // null for fluids
-        final FluidStack fluid; // null for items
+        final double amountPerCraft;
+        final int chance;
+        final ItemStack stack;
+        final FluidStack fluid;
 
         OutputEntry(String name, double amountPerCraft, int chance, ItemStack stack, FluidStack fluid) {
             this.name = name;
@@ -110,7 +104,6 @@ public class GuiRateCalculator extends GuiScreen {
         this.presets = MachineRegistry.presetsFor(recipeMap.unlocalizedName);
         this.cfg = MachineRegistry.defaultConfig(recipeMap.unlocalizedName, recipe);
 
-        // Warm the tree index in the background while the user reads rates.
         RecipeIndex.ensureBuilt();
 
         collectStacks();
@@ -138,8 +131,7 @@ public class GuiRateCalculator extends GuiScreen {
         }
         if (recipe.mInputs != null) {
             for (ItemStack stack : recipe.mInputs) {
-                // GregTech marks non-consumed inputs (programmed circuits, molds)
-                // with stack size 0; they don't participate in rates.
+                // stackSize 0 marks non-consumed inputs (programmed circuits, molds).
                 if (stack == null || stack.stackSize <= 0) continue;
                 inputs.add(new InputEntry(stack.getDisplayName(), stack.stackSize, false));
             }

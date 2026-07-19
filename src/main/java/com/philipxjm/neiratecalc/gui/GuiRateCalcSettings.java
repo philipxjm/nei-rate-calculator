@@ -10,7 +10,6 @@ import com.philipxjm.neiratecalc.Config;
 
 import gregtech.api.enums.GTValues;
 
-/** In-game editor for the calculator defaults; saves straight to the cfg. */
 public class GuiRateCalcSettings extends GuiScreen {
 
     private static final int PANEL_WIDTH = 360;
@@ -32,7 +31,7 @@ public class GuiRateCalcSettings extends GuiScreen {
         for (int row = 0; row < 4; row++) {
             int y = rowY(row);
             if (row == 2) {
-                // Prefer-multiblock is a single toggle button.
+
                 buttonList.add(new GuiButton(4, panelLeft + 160, y, 196, 20, ""));
             } else {
                 buttonList.add(new GuiButton(row * 2, panelLeft + 160, y, 20, 20, "<"));

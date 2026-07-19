@@ -15,11 +15,6 @@ import com.philipxjm.neiratecalc.NEIRateCalc;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
 
-/**
- * Global index of every GT recipe by what it produces, so the tree view can
- * find producers for any input. Built once, lazily, on a background thread
- * (a full GTNH install holds a few hundred thousand recipes).
- */
 public final class RecipeIndex {
 
     public static final class Producer {
@@ -44,7 +39,6 @@ public final class RecipeIndex {
         return ready;
     }
 
-    /** Kicks off the build if it hasn't run yet; returns immediately. */
     public static synchronized void ensureBuilt() {
         if (started) {
             return;

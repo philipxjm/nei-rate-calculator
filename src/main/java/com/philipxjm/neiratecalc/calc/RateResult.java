@@ -1,16 +1,15 @@
 package com.philipxjm.neiratecalc.calc;
 
-/** Result of running one recipe on one configured machine. */
 public class RateResult {
 
     public final boolean ok;
     public final String error;
-    /** Concurrent recipe copies actually running (EU-budget limited). */
+
     public final int parallels;
     public final int durationTicks;
-    /** Total EU/t drawn by the machine including all parallels. */
+
     public final long eut;
-    /** Crafts per minute for ONE machine, including parallels. */
+
     public final double craftsPerMin;
 
     private RateResult(boolean ok, String error, int parallels, int durationTicks, long eut, double craftsPerMin) {

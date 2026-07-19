@@ -6,6 +6,7 @@ import org.apache.logging.log4j.Logger;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 
 @Mod(
     modid = NEIRateCalc.MODID,
@@ -22,6 +23,11 @@ public class NEIRateCalc {
         clientSide = "com.philipxjm.neiratecalc.ClientProxy",
         serverSide = "com.philipxjm.neiratecalc.CommonProxy")
     public static CommonProxy proxy;
+
+    @Mod.EventHandler
+    public void preInit(FMLPreInitializationEvent event) {
+        Config.load(event.getSuggestedConfigurationFile());
+    }
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {

@@ -13,37 +13,53 @@ import net.minecraftforge.fluids.FluidStack;
 
 import org.lwjgl.input.Keyboard;
 
+import com.philipxjm.neiratecalc.calc.MachineConfig;
+import com.philipxjm.neiratecalc.calc.MachinePreset;
+import com.philipxjm.neiratecalc.calc.MachineRegistry;
+import com.philipxjm.neiratecalc.calc.OCKind;
+import com.philipxjm.neiratecalc.calc.RateMath;
+import com.philipxjm.neiratecalc.calc.RateResult;
+import com.philipxjm.neiratecalc.calc.RecipeIndex;
+
 import gregtech.api.enums.GTValues;
+import gregtech.api.enums.HeatingCoilLevel;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
-import gregtech.api.util.OverclockCalculator;
 
 /**
- * The in-game rates calculator: pick a machine tier and a machine count for a
- * GregTech recipe and see per-minute input/output rates, overclocked speed and
- * power, and how many machines a target rate needs.
+ * The in-game rates calculator: pick a machine (singleblock tier or a real
+ * multiblock with its parallel/speed bonuses), see per-minute rates, and size
+ * a bank of machines for a target rate. From here the recipe tree opens.
  */
 public class GuiRateCalculator extends GuiScreen {
 
-    private static final int PANEL_WIDTH = 300;
+    private static final int PANEL_WIDTH = 320;
+    private static final int ROW_HEIGHT = 22;
+    private static final int TREE_BUTTON_ID = 900;
 
     private final GuiScreen parent;
     private final RecipeMap<?> recipeMap;
     private final GTRecipe recipe;
 
     /** Combined item+fluid outputs for rate display and target selection. */
-    private static class OutputEntry {
+    static class OutputEntry {
 
         final String name;
         final double amountPerCraft; // chance-weighted
         final int chance; // 1..10000
-        final boolean fluid;
+        final ItemStack stack; // null for fluids
+        final FluidStack fluid; // null for items
 
-        OutputEntry(String name, double amountPerCraft, int chance, boolean fluid) {
+        OutputEntry(String name, double amountPerCraft, int chance, ItemStack stack, FluidStack fluid) {
             this.name = name;
             this.amountPerCraft = amountPerCraft;
             this.chance = chance;
+            this.stack = stack;
             this.fluid = fluid;
+        }
+
+        boolean isFluid() {
+            return fluid != null;
         }
     }
 
@@ -60,18 +76,27 @@ public class GuiRateCalculator extends GuiScreen {
         }
     }
 
+    private enum RowKind {
+        MACHINE,
+        TIER,
+        AMPS,
+        COILS,
+        PIPE,
+        CASING,
+        MACHINES,
+        OUTPUT
+    }
+
     private final List<OutputEntry> outputs = new ArrayList<OutputEntry>();
     private final List<InputEntry> inputs = new ArrayList<InputEntry>();
+    private final List<MachinePreset> presets;
+    private final List<RowKind> rows = new ArrayList<RowKind>();
 
-    private int tier;
+    private final MachineConfig cfg;
     private final int minTier;
-    private int machines = 1;
     private int targetOutput = 0;
     private GuiTextField targetField;
-
-    // Computed by recompute()
-    private int ocDuration;
-    private long ocConsumption;
+    private RateResult rr;
 
     private int panelLeft;
     private int panelTop;
@@ -80,13 +105,12 @@ public class GuiRateCalculator extends GuiScreen {
         this.parent = parent;
         this.recipeMap = recipeMap;
         this.recipe = recipe;
+        this.minTier = MachineConfig.minTierFor(recipe.mEUt);
+        this.presets = MachineRegistry.presetsFor(recipeMap.unlocalizedName);
+        this.cfg = MachineRegistry.defaultConfig(recipeMap.unlocalizedName, recipe);
 
-        int t = 0;
-        while (t < GTValues.V.length - 1 && GTValues.V[t] < recipe.mEUt) {
-            t++;
-        }
-        this.minTier = t;
-        this.tier = t;
+        // Warm the tree index in the background while the user reads rates.
+        RecipeIndex.ensureBuilt();
 
         collectStacks();
         recompute();
@@ -101,14 +125,14 @@ public class GuiRateCalculator extends GuiScreen {
                 if (recipe.mOutputChances != null && i < recipe.mOutputChances.length) {
                     chance = recipe.mOutputChances[i];
                 }
-                outputs
-                    .add(new OutputEntry(stack.getDisplayName(), stack.stackSize * (chance / 10000.0), chance, false));
+                outputs.add(
+                    new OutputEntry(stack.getDisplayName(), stack.stackSize * (chance / 10000.0), chance, stack, null));
             }
         }
         if (recipe.mFluidOutputs != null) {
             for (FluidStack fluid : recipe.mFluidOutputs) {
                 if (fluid == null) continue;
-                outputs.add(new OutputEntry(fluid.getLocalizedName(), fluid.amount, 10000, true));
+                outputs.add(new OutputEntry(fluid.getLocalizedName(), fluid.amount, 10000, null, fluid));
             }
         }
         if (recipe.mInputs != null) {
@@ -128,42 +152,57 @@ public class GuiRateCalculator extends GuiScreen {
     }
 
     private void recompute() {
-        try {
-            OverclockCalculator calc = new OverclockCalculator().setRecipeEUt(recipe.mEUt)
-                .setDuration(recipe.mDuration)
-                .setEUt(GTValues.V[tier])
-                .calculate();
-            ocDuration = Math.max(1, calc.getDuration());
-            ocConsumption = calc.getConsumption();
-        } catch (Throwable t) {
-            // Fall back to unclocked values rather than crash the GUI.
-            ocDuration = Math.max(1, recipe.mDuration);
-            ocConsumption = recipe.mEUt;
-        }
+        rr = RateMath.compute(recipe, cfg);
+        MachineRegistry.rememberChoice(recipeMap.unlocalizedName, cfg);
     }
 
-    private double craftsPerMinutePerMachine() {
-        return 1200.0 / ocDuration;
+    private void rebuildRows() {
+        rows.clear();
+        rows.add(RowKind.MACHINE);
+        rows.add(RowKind.TIER);
+        if (cfg.preset.multiblock) {
+            rows.add(RowKind.AMPS);
+        }
+        if (cfg.preset.usesCoils) {
+            rows.add(RowKind.COILS);
+        }
+        if (cfg.preset.usesPipeCasing) {
+            rows.add(RowKind.PIPE);
+        }
+        if (cfg.preset.casingLabel != null) {
+            rows.add(RowKind.CASING);
+        }
+        rows.add(RowKind.MACHINES);
+        rows.add(RowKind.OUTPUT);
     }
+
+    private int rowY(int rowIndex) {
+        return panelTop + 16 + rowIndex * ROW_HEIGHT;
+    }
+
+    private void layoutControls() {
+        rebuildRows();
+        buttonList.clear();
+        for (int i = 0; i < rows.size(); i++) {
+            String left = rows.get(i) == RowKind.MACHINES ? "-" : "<";
+            String right = rows.get(i) == RowKind.MACHINES ? "+" : ">";
+            buttonList.add(new GuiButton(i * 2, panelLeft + 64, rowY(i), 20, 20, left));
+            buttonList.add(new GuiButton(i * 2 + 1, panelLeft + 236, rowY(i), 20, 20, right));
+        }
+        int fieldY = rowY(rows.size()) + 2;
+        targetField = new GuiTextField(fontRendererObj, panelLeft + 64, fieldY, 96, 16);
+        targetField.setText(targetText);
+        targetField.setMaxStringLength(10);
+        buttonList.add(new GuiButton(TREE_BUTTON_ID, panelLeft + 236, fieldY - 2, 60, 20, "Tree..."));
+    }
+
+    private String targetText = "64";
 
     @Override
     public void initGui() {
         panelLeft = (width - PANEL_WIDTH) / 2;
-        panelTop = 24;
-
-        buttonList.clear();
-        int rowY = panelTop + 24;
-        buttonList.add(new GuiButton(0, panelLeft + 60, rowY, 20, 20, "<"));
-        buttonList.add(new GuiButton(1, panelLeft + 160, rowY, 20, 20, ">"));
-        buttonList.add(new GuiButton(2, panelLeft + 60, rowY + 24, 20, 20, "-"));
-        buttonList.add(new GuiButton(3, panelLeft + 160, rowY + 24, 20, 20, "+"));
-        buttonList.add(new GuiButton(4, panelLeft + 60, rowY + 48, 20, 20, "<"));
-        buttonList.add(new GuiButton(5, panelLeft + 160, rowY + 48, 20, 20, ">"));
-
-        targetField = new GuiTextField(fontRendererObj, panelLeft + 60, rowY + 74, 96, 16);
-        targetField.setText("64");
-        targetField.setMaxStringLength(10);
-
+        panelTop = 12;
+        layoutControls();
         Keyboard.enableRepeatEvents(true);
     }
 
@@ -174,28 +213,72 @@ public class GuiRateCalculator extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == TREE_BUTTON_ID) {
+            openTree();
+            return;
+        }
+        int rowIndex = button.id / 2;
+        if (rowIndex < 0 || rowIndex >= rows.size()) {
+            return;
+        }
+        boolean forward = button.id % 2 == 1;
+        int dir = forward ? 1 : -1;
         int step = isShiftKeyDown() ? 10 : 1;
-        switch (button.id) {
-            case 0:
-                tier = Math.max(minTier, tier - 1);
+        boolean relayout = false;
+
+        switch (rows.get(rowIndex)) {
+            case MACHINE: {
+                int idx = presets.indexOf(cfg.preset);
+                idx = (idx + dir + presets.size()) % presets.size();
+                cfg.preset = presets.get(idx);
+                if (cfg.preset.oc == OCKind.HEAT && cfg.machineHeat() < recipe.mSpecialValue) {
+                    cfg.fitCoilsTo(recipe.mSpecialValue);
+                }
+                cfg.clampToPreset();
+                relayout = true;
                 break;
-            case 1:
-                tier = Math.min(GTValues.V.length - 1, tier + 1);
+            }
+            case TIER:
+                cfg.tier = Math
+                    .max(cfg.preset.multiblock ? 0 : minTier, Math.min(GTValues.V.length - 1, cfg.tier + dir));
                 break;
-            case 2:
-                machines = Math.max(1, machines - step);
+            case AMPS:
+                cfg.amps = forward ? Math.min(1_048_576, cfg.amps * 2) : Math.max(1, cfg.amps / 2);
                 break;
-            case 3:
-                machines = Math.min(9999, machines + step);
+            case COILS:
+                cfg.coilOrdinal = Math.max(2, Math.min(HeatingCoilLevel.values().length - 1, cfg.coilOrdinal + dir));
                 break;
-            case 4:
-                if (!outputs.isEmpty()) targetOutput = (targetOutput + outputs.size() - 1) % outputs.size();
+            case PIPE:
+                cfg.pipeTier = Math.max(1, Math.min(4, cfg.pipeTier + dir));
                 break;
-            case 5:
-                if (!outputs.isEmpty()) targetOutput = (targetOutput + 1) % outputs.size();
+            case CASING:
+                cfg.casingTier = Math.max(cfg.preset.casingMin, Math.min(cfg.preset.casingMax, cfg.casingTier + dir));
+                break;
+            case MACHINES:
+                cfg.machines = Math.max(1, Math.min(99999, cfg.machines + dir * step));
+                break;
+            case OUTPUT:
+                if (!outputs.isEmpty()) {
+                    targetOutput = (targetOutput + dir + outputs.size()) % outputs.size();
+                }
                 break;
         }
         recompute();
+        if (relayout) {
+            layoutControls();
+        }
+    }
+
+    private void openTree() {
+        if (outputs.isEmpty()) {
+            return;
+        }
+        double target = parseTarget();
+        if (target <= 0) {
+            target = 64;
+        }
+        OutputEntry out = outputs.get(targetOutput);
+        mc.displayGuiScreen(new GuiRecipeTree(this, recipeMap, recipe, out, target, cfg.copy()));
     }
 
     @Override
@@ -204,7 +287,9 @@ public class GuiRateCalculator extends GuiScreen {
             mc.displayGuiScreen(parent);
             return;
         }
-        targetField.textboxKeyTyped(typedChar, keyCode);
+        if (targetField.textboxKeyTyped(typedChar, keyCode)) {
+            targetText = targetField.getText();
+        }
     }
 
     @Override
@@ -228,10 +313,54 @@ public class GuiRateCalculator extends GuiScreen {
         }
     }
 
-    private static String fmt(double v) {
+    static String fmt(double v) {
         if (v >= 100) return String.format("%,.0f", v);
         if (v >= 1) return String.format("%.2f", v);
         return String.format("%.3f", v);
+    }
+
+    private String rowValue(RowKind kind) {
+        switch (kind) {
+            case MACHINE:
+                return cfg.preset.name;
+            case TIER:
+                return GTValues.VN[cfg.tier] + " (" + String.format("%,d", GTValues.V[cfg.tier]) + " EU/t)";
+            case AMPS:
+                return cfg.amps + "A";
+            case COILS:
+                return cfg.coilName() + " (" + String.format("%,d", cfg.coilHeat()) + "K)";
+            case PIPE:
+                return cfg.pipeCasingName();
+            case CASING:
+                return cfg.preset.casingName(cfg.casingTier);
+            case MACHINES:
+                return String.valueOf(cfg.machines);
+            case OUTPUT:
+                return outputs.isEmpty() ? "-" : trim(outputs.get(targetOutput).name, 18);
+        }
+        return "";
+    }
+
+    private String rowLabel(RowKind kind) {
+        switch (kind) {
+            case MACHINE:
+                return "Machine";
+            case TIER:
+                return "Tier";
+            case AMPS:
+                return "Amps";
+            case COILS:
+                return "Coils";
+            case PIPE:
+                return "Pipe casing";
+            case CASING:
+                return cfg.preset.casingLabel;
+            case MACHINES:
+                return "Machines";
+            case OUTPUT:
+                return "Output";
+        }
+        return "";
     }
 
     @Override
@@ -242,72 +371,74 @@ public class GuiRateCalculator extends GuiScreen {
         String title = EnumChatFormatting.GOLD + machineName + EnumChatFormatting.RESET + " - Rate Calculator";
         drawCenteredString(fontRendererObj, title, width / 2, panelTop, 0xFFFFFF);
 
-        int rowY = panelTop + 24;
-        int labelX = panelLeft;
-        int valueX = panelLeft + 84;
+        for (int i = 0; i < rows.size(); i++) {
+            RowKind kind = rows.get(i);
+            fontRendererObj.drawString(rowLabel(kind), panelLeft, rowY(i) + 6, 0xAAAAAA);
+            drawCenteredString(fontRendererObj, rowValue(kind), panelLeft + 160, rowY(i) + 6, 0xFFFFFF);
+        }
 
-        // Tier row
-        fontRendererObj.drawString("Tier", labelX, rowY + 6, 0xAAAAAA);
-        String tierText = GTValues.VN[tier] + " (" + String.format("%,d", GTValues.V[tier]) + " EU/t)";
-        drawCenteredString(fontRendererObj, tierText, panelLeft + 120, rowY + 6, 0xFFFFFF);
-
-        // Machines row
-        fontRendererObj.drawString("Machines", labelX, rowY + 30, 0xAAAAAA);
-        drawCenteredString(fontRendererObj, String.valueOf(machines), panelLeft + 120, rowY + 30, 0xFFFFFF);
-
-        // Target output selector row
-        fontRendererObj.drawString("Output", labelX, rowY + 54, 0xAAAAAA);
-        String outName = outputs.isEmpty() ? "-" : trim(outputs.get(targetOutput).name, 12);
-        drawCenteredString(fontRendererObj, outName, panelLeft + 120, rowY + 54, 0xFFFFFF);
-
-        // Target rate field
-        fontRendererObj.drawString("Target/min", labelX, rowY + 78, 0xAAAAAA);
+        int fieldY = rowY(rows.size()) + 2;
+        fontRendererObj.drawString("Target/min", panelLeft, fieldY + 4, 0xAAAAAA);
         targetField.drawTextBox();
 
-        double craftsPerMin = craftsPerMinutePerMachine();
-        int y = rowY + 100;
+        int y = fieldY + 24;
 
+        if (cfg.preset.note != null) {
+            fontRendererObj.drawString(EnumChatFormatting.GRAY + cfg.preset.note, panelLeft, y, 0xFFFFFF);
+            y += 11;
+        }
+
+        if (!rr.ok) {
+            fontRendererObj.drawString(EnumChatFormatting.RED + rr.error, panelLeft, y, 0xFFFFFF);
+            super.drawScreen(mouseX, mouseY, partialTicks);
+            return;
+        }
+
+        double craftsPerMin = rr.craftsPerMin;
+        String parallelNote = rr.parallels > 1
+            ? String.format("   Parallels: %s%d%s", EnumChatFormatting.AQUA, rr.parallels, EnumChatFormatting.RESET)
+            : "";
         fontRendererObj.drawString(
             String.format(
-                "Time/craft: %s%.2fs%s   EU/t: %s%,d%s   EU/craft: %,d",
+                "Time/craft: %s%.2fs%s   EU/t: %s%,d%s%s",
                 EnumChatFormatting.AQUA,
-                ocDuration / 20.0,
+                rr.durationTicks / 20.0,
                 EnumChatFormatting.RESET,
                 EnumChatFormatting.AQUA,
-                ocConsumption,
+                rr.eut,
                 EnumChatFormatting.RESET,
-                ocConsumption * ocDuration),
-            labelX,
+                parallelNote),
+            panelLeft,
             y,
             0xFFFFFF);
         y += 11;
         fontRendererObj.drawString(
-            String.format("Crafts/min: %s per machine, %s total", fmt(craftsPerMin), fmt(craftsPerMin * machines)),
-            labelX,
+            String.format("Crafts/min: %s per machine, %s total", fmt(craftsPerMin), fmt(craftsPerMin * cfg.machines)),
+            panelLeft,
             y,
             0xFFFFFF);
         y += 14;
 
-        fontRendererObj.drawString(EnumChatFormatting.GREEN + "Outputs (/min, all machines):", labelX, y, 0xFFFFFF);
+        fontRendererObj.drawString(EnumChatFormatting.GREEN + "Outputs (/min, all machines):", panelLeft, y, 0xFFFFFF);
         y += 11;
         for (OutputEntry out : outputs) {
             String chanceNote = out.chance < 10000 ? String.format(" (%.1f%%)", out.chance / 100.0) : "";
-            String unit = out.fluid ? " L" : "";
+            String unit = out.isFluid() ? " L" : "";
             fontRendererObj.drawString(
                 "  " + trim(out.name, 26)
                     + chanceNote
                     + ": "
                     + EnumChatFormatting.GREEN
-                    + fmt(out.amountPerCraft * craftsPerMin * machines)
+                    + fmt(out.amountPerCraft * craftsPerMin * cfg.machines)
                     + unit,
-                labelX,
+                panelLeft,
                 y,
                 0xFFFFFF);
             y += 10;
         }
         y += 4;
 
-        fontRendererObj.drawString(EnumChatFormatting.RED + "Inputs (/min, all machines):", labelX, y, 0xFFFFFF);
+        fontRendererObj.drawString(EnumChatFormatting.RED + "Inputs (/min, all machines):", panelLeft, y, 0xFFFFFF);
         y += 11;
         for (InputEntry in : inputs) {
             String unit = in.fluid ? " L" : "";
@@ -315,16 +446,15 @@ public class GuiRateCalculator extends GuiScreen {
                 "  " + trim(in.name, 26)
                     + ": "
                     + EnumChatFormatting.RED
-                    + fmt(in.amountPerCraft * craftsPerMin * machines)
+                    + fmt(in.amountPerCraft * craftsPerMin * cfg.machines)
                     + unit,
-                labelX,
+                panelLeft,
                 y,
                 0xFFFFFF);
             y += 10;
         }
         y += 6;
 
-        // Machines needed for target
         double target = parseTarget();
         if (target > 0 && !outputs.isEmpty()) {
             OutputEntry out = outputs.get(targetOutput);
@@ -333,24 +463,26 @@ public class GuiRateCalculator extends GuiScreen {
                 int needed = (int) Math.ceil(target / perMachine);
                 fontRendererObj.drawString(
                     String.format(
-                        "%s%d machines%s at %s for %s %s/min",
+                        "%s%d machines%s (%s, %s) for %s %s/min",
                         EnumChatFormatting.GOLD,
                         needed,
                         EnumChatFormatting.RESET,
-                        GTValues.VN[tier],
+                        cfg.preset.name,
+                        GTValues.VN[cfg.tier],
                         fmt(target),
                         trim(out.name, 20)),
-                    labelX,
+                    panelLeft,
                     y,
                     0xFFFFFF);
                 y += 12;
             }
         }
 
-        if (recipe.mSpecialValue > 0 && "gt.recipe.blastfurnace".equals(recipeMap.unlocalizedName)) {
+        if (recipe.mSpecialValue > 0 && cfg.preset.oc == OCKind.HEAT) {
             fontRendererObj.drawString(
-                EnumChatFormatting.YELLOW + String.format("Requires %,dK coil heat", recipe.mSpecialValue),
-                labelX,
+                EnumChatFormatting.YELLOW
+                    + String.format("Recipe heat: %,dK / machine: %,dK", recipe.mSpecialValue, cfg.machineHeat()),
+                panelLeft,
                 y,
                 0xFFFFFF);
         }
@@ -358,7 +490,7 @@ public class GuiRateCalculator extends GuiScreen {
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    private static String trim(String s, int max) {
+    static String trim(String s, int max) {
         return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
 

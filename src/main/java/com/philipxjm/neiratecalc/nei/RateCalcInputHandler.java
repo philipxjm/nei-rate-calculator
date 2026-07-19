@@ -73,7 +73,7 @@ public class RateCalcInputHandler implements IContainerInputHandler {
             return false;
         }
         Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiRecipeTree(gui, target.stack, target.fluidAlt, target.amount));
+            .displayGuiScreen(new GuiRecipeTree(gui, target.stack, target.fluidAlt, target.amount, target.scope));
         return true;
     }
 

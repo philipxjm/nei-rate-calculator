@@ -53,8 +53,6 @@ public class GuiRecipeTree extends GuiScreen {
         int producerIdx = -1;
         /** Index of the NEI-bookmarked recipe among producers, -1 if none. */
         int bookmarkIdx = -1;
-        /** The item itself appears in the bookmark panel. */
-        boolean inBookmarks;
         MachineConfig cfg;
         RateResult rr;
         double craftsPerMinNeeded;
@@ -102,6 +100,8 @@ public class GuiRecipeTree extends GuiScreen {
     /** Set when opened from a bookmark: root resolves once the index is up. */
     private ItemStack pendingRootStack;
     private FluidStack pendingRootFluid;
+    /** Non-null when opened from a bookmark group: recipes stay inside it. */
+    private final BookmarkHelper.Scope scope;
 
     private final List<Node> visible = new ArrayList<Node>();
     private int scroll;
@@ -112,6 +112,7 @@ public class GuiRecipeTree extends GuiScreen {
     public GuiRecipeTree(GuiScreen parent, RecipeMap<?> recipeMap, GTRecipe recipe, GuiRateCalculator.OutputEntry out,
         double targetPerMin, MachineConfig rootCfg) {
         this.parent = parent;
+        this.scope = null;
         this.targetText = GuiRateCalculator.fmt(targetPerMin);
 
         root = new Node(out.name, out.stack, out.fluid, null);
@@ -142,8 +143,10 @@ public class GuiRecipeTree extends GuiScreen {
      * Opens the tree for an arbitrary target (K over a bookmark group/item):
      * the bookmarked chain expands automatically below it.
      */
-    public GuiRecipeTree(GuiScreen parent, ItemStack stack, FluidStack fluidAlt, double targetPerMin) {
+    public GuiRecipeTree(GuiScreen parent, ItemStack stack, FluidStack fluidAlt, double targetPerMin,
+        BookmarkHelper.Scope scope) {
         this.parent = parent;
+        this.scope = scope;
         this.targetText = GuiRateCalculator.fmt(targetPerMin);
         this.pendingRootStack = stack;
         this.pendingRootFluid = fluidAlt;
@@ -166,7 +169,7 @@ public class GuiRecipeTree extends GuiScreen {
             n.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(pendingRootFluid));
         }
         n.requiredPerMin = Math.max(0, parseTarget());
-        n.bookmarkIdx = BookmarkHelper.findBookmarked(n.stack, n.fluid, n.producers);
+        n.bookmarkIdx = BookmarkHelper.findBookmarked(n.stack, n.fluid, n.producers, scope);
         if (!n.producers.isEmpty()) {
             n.producerIdx = n.bookmarkIdx >= 0 ? n.bookmarkIdx : 0;
             n.cfg = MachineRegistry.defaultConfig(n.map().unlocalizedName, n.recipe());
@@ -176,10 +179,9 @@ public class GuiRecipeTree extends GuiScreen {
     }
 
     /**
-     * Expands a node, then keeps expanding every input that appears in the
-     * NEI bookmark panel — being bookmarked means the user wants that step's
-     * crafting details. A bookmarked recipe picks the producer; otherwise
-     * the first producer is used and the recipe stays cyclable.
+     * Expands a node, then keeps expanding every input that a bookmarked
+     * recipe (within the scope) produces. Inputs without a saved recipe stay
+     * collapsed as raw materials, even if they appear as chain ingredients.
      */
     private void expandChain(Node node, int depth) {
         if (!node.expanded) {
@@ -189,10 +191,10 @@ public class GuiRecipeTree extends GuiScreen {
             return;
         }
         for (Node child : node.children) {
-            if (child.loop || child.expanded || !child.inBookmarks || child.producers.isEmpty()) {
+            if (child.loop || child.expanded || child.bookmarkIdx < 0) {
                 continue;
             }
-            child.producerIdx = child.bookmarkIdx >= 0 ? child.bookmarkIdx : 0;
+            child.producerIdx = child.bookmarkIdx;
             GTRecipe recipe = child.recipe();
             if (recipe == null) {
                 continue;
@@ -226,8 +228,7 @@ public class GuiRecipeTree extends GuiScreen {
                 if (in == null || in.stackSize <= 0 || in.getItem() == null) continue;
                 Node child = new Node(in.getDisplayName(), in, null, node);
                 child.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forItem(in));
-                child.bookmarkIdx = BookmarkHelper.findBookmarked(in, null, child.producers);
-                child.inBookmarks = child.bookmarkIdx >= 0 || BookmarkHelper.isBookmarked(in, null);
+                child.bookmarkIdx = BookmarkHelper.findBookmarked(in, null, child.producers, scope);
                 markLoop(child);
                 node.children.add(child);
             }
@@ -237,8 +238,7 @@ public class GuiRecipeTree extends GuiScreen {
                 if (in == null || in.amount <= 0 || in.getFluid() == null) continue;
                 Node child = new Node(in.getLocalizedName(), null, in, node);
                 child.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(in));
-                child.bookmarkIdx = BookmarkHelper.findBookmarked(null, in, child.producers);
-                child.inBookmarks = child.bookmarkIdx >= 0 || BookmarkHelper.isBookmarked(null, in);
+                child.bookmarkIdx = BookmarkHelper.findBookmarked(null, in, child.producers, scope);
                 markLoop(child);
                 node.children.add(child);
             }
@@ -604,8 +604,7 @@ public class GuiRecipeTree extends GuiScreen {
             } else if (node.fluid != null) {
                 node.producers = new ArrayList<RecipeIndex.Producer>(RecipeIndex.forFluid(node.fluid));
             }
-            node.bookmarkIdx = BookmarkHelper.findBookmarked(node.stack, node.fluid, node.producers);
-            node.inBookmarks = node.bookmarkIdx >= 0 || BookmarkHelper.isBookmarked(node.stack, node.fluid);
+            node.bookmarkIdx = BookmarkHelper.findBookmarked(node.stack, node.fluid, node.producers, scope);
         }
         for (Node child : node.children) {
             refreshProducers(child);
@@ -700,7 +699,7 @@ public class GuiRecipeTree extends GuiScreen {
             } else if (node.isRaw()) {
                 if (node.producers.isEmpty() && RecipeIndex.isReady()) {
                     right = EnumChatFormatting.DARK_GRAY + "raw";
-                } else if (node.bookmarkIdx >= 0 || node.inBookmarks) {
+                } else if (node.bookmarkIdx >= 0) {
                     right = EnumChatFormatting.GOLD + "* " + EnumChatFormatting.GRAY + "raw (bookmarked, + crafts)";
                 } else {
                     right = EnumChatFormatting.GRAY + "raw (click + to craft)";

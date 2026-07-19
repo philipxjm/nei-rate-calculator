@@ -32,6 +32,21 @@ public final class BookmarkHelper {
 
     private BookmarkHelper() {}
 
+    /**
+     * Restricts recipe lookups to one bookmark group (the tree K was pressed
+     * on); null scope means all bookmarks everywhere.
+     */
+    public static class Scope {
+
+        final BookmarkGrid grid;
+        final int groupId;
+
+        public Scope(BookmarkGrid grid, int groupId) {
+            this.grid = grid;
+            this.groupId = groupId;
+        }
+    }
+
     /** What a K-press over the bookmark panel should calculate. */
     public static class GroupTarget {
 
@@ -40,11 +55,14 @@ public final class BookmarkHelper {
         public final FluidStack fluidAlt;
         /** The amount configured on the bookmark, as target per minute. */
         public final double amount;
+        /** Recipe lookups stay inside the group that was clicked. */
+        public final Scope scope;
 
-        GroupTarget(ItemStack stack, FluidStack fluidAlt, double amount) {
+        GroupTarget(ItemStack stack, FluidStack fluidAlt, double amount, Scope scope) {
             this.stack = stack;
             this.fluidAlt = fluidAlt;
             this.amount = amount;
+            this.scope = scope;
         }
     }
 
@@ -129,7 +147,8 @@ public final class BookmarkHelper {
                 return null;
             }
             double amount = Math.max(1, rootItem.getAmount());
-            return new GroupTarget(rootItem.itemStack, StackInfo.getFluid(rootItem.itemStack), amount);
+            Scope scope = new Scope(grid, Math.max(groupId, BookmarkGrid.DEFAULT_GROUP_ID));
+            return new GroupTarget(rootItem.itemStack, StackInfo.getFluid(rootItem.itemStack), amount, scope);
         } catch (Throwable t) {
             if (!broken) {
                 broken = true;
@@ -168,45 +187,22 @@ public final class BookmarkHelper {
         throw new NoSuchFieldException(name);
     }
 
-    /**
-     * True when this item/fluid appears anywhere in the bookmark panel (as a
-     * plain bookmark, a chain ingredient, or a result) — the user's signal
-     * that they care how it gets crafted.
-     */
-    public static boolean isBookmarked(ItemStack stack, FluidStack fluid) {
-        try {
-            for (BookmarkGrid grid : allGrids()) {
-                for (int i = 0; i < grid.size(); i++) {
-                    BookmarkItem item = grid.getBookmarkItem(i);
-                    if (item == null || item.itemStack == null || item.itemStack.getItem() == null) {
-                        continue;
-                    }
-                    if (stack != null && RecipeIndex.itemKey(item.itemStack) == RecipeIndex.itemKey(stack)) {
-                        return true;
-                    }
-                    if (fluid != null) {
-                        FluidStack asFluid = StackInfo.getFluid(item.itemStack);
-                        if (asFluid != null && asFluid.getFluid() == fluid.getFluid()) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            if (!broken) {
-                broken = true;
-                NEIRateCalc.LOG.error("Bookmark lookup failed", t);
-            }
-        }
-        return false;
-    }
-
-    private static List<Recipe.RecipeId> bookmarkedRecipeIds() {
+    private static List<Recipe.RecipeId> bookmarkedRecipeIds(Scope scope) {
         List<Recipe.RecipeId> ids = new ArrayList<Recipe.RecipeId>();
-        for (BookmarkGrid grid : allGrids()) {
+        List<BookmarkGrid> grids;
+        if (scope != null) {
+            grids = new ArrayList<BookmarkGrid>();
+            grids.add(scope.grid);
+        } else {
+            grids = allGrids();
+        }
+        for (BookmarkGrid grid : grids) {
             for (int i = 0; i < grid.size(); i++) {
                 BookmarkItem item = grid.getBookmarkItem(i);
                 if (item == null || item.recipeId == null) {
+                    continue;
+                }
+                if (scope != null && item.groupId != scope.groupId) {
                     continue;
                 }
                 if (!ids.contains(item.recipeId)) {
@@ -222,11 +218,17 @@ public final class BookmarkHelper {
      * or -1 when no bookmark matches.
      */
     public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers) {
+        return findBookmarked(stack, fluid, producers, null);
+    }
+
+    /** Scoped variant: only recipes bookmarked inside the given group count. */
+    public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers,
+        Scope scope) {
         if (producers == null || producers.isEmpty()) {
             return -1;
         }
         try {
-            for (Recipe.RecipeId rid : bookmarkedRecipeIds()) {
+            for (Recipe.RecipeId rid : bookmarkedRecipeIds(scope)) {
                 if (!resultMatches(rid, stack, fluid)) {
                     continue;
                 }

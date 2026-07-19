@@ -18,7 +18,6 @@ import codechicken.nei.recipe.GuiRecipe;
 import codechicken.nei.recipe.IRecipeHandler;
 import codechicken.nei.recipe.NEIRecipeWidget;
 import codechicken.nei.recipe.RecipeHandlerRef;
-import codechicken.nei.recipe.SearchRecipeHandler;
 import codechicken.nei.recipe.TemplateRecipeHandler;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.util.GTRecipe;
@@ -81,12 +80,25 @@ public class RateCalcInputHandler implements IContainerInputHandler {
         IRecipeHandler handler = ref.handler;
         int recipeIndex = ref.recipeIndex;
 
-        // The viewer wraps handlers for search filtering; translate the index
-        // back into the real handler's recipe space.
-        if (handler instanceof SearchRecipeHandler) {
-            SearchRecipeHandler<?> search = (SearchRecipeHandler<?>) handler;
-            recipeIndex = search.ref(recipeIndex);
-            handler = search.original;
+        // The viewer may wrap handlers for search filtering
+        // (SearchRecipeHandler is package-private, hence reflection);
+        // translate the index back into the real handler's recipe space.
+        if ("codechicken.nei.recipe.SearchRecipeHandler".equals(
+            handler.getClass()
+                .getName())) {
+            try {
+                java.lang.reflect.Method refMethod = handler.getClass()
+                    .getMethod("ref", int.class);
+                refMethod.setAccessible(true);
+                recipeIndex = (Integer) refMethod.invoke(handler, recipeIndex);
+                java.lang.reflect.Field originalField = handler.getClass()
+                    .getField("original");
+                originalField.setAccessible(true);
+                handler = (IRecipeHandler) originalField.get(handler);
+            } catch (Throwable t) {
+                NEIRateCalc.LOG.error("Could not unwrap NEI search handler", t);
+                return false;
+            }
         }
 
         if (!(handler instanceof GTNEIDefaultHandler)) {
@@ -104,7 +116,8 @@ public class RateCalcInputHandler implements IContainerInputHandler {
         GTRecipe recipe = ((GTNEIDefaultHandler.CachedDefaultRecipe) cached).mRecipe;
         RecipeMap<?> recipeMap = gtHandler.getRecipeMap();
 
-        Minecraft.getMinecraft().displayGuiScreen(new GuiRateCalculator(recipeGui, recipeMap, recipe));
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new GuiRateCalculator(recipeGui, recipeMap, recipe));
         return true;
     }
 

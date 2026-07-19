@@ -101,12 +101,8 @@ public class GuiRateCalculator extends GuiScreen {
                 if (recipe.mOutputChances != null && i < recipe.mOutputChances.length) {
                     chance = recipe.mOutputChances[i];
                 }
-                outputs.add(
-                    new OutputEntry(
-                        stack.getDisplayName(),
-                        stack.stackSize * (chance / 10000.0),
-                        chance,
-                        false));
+                outputs
+                    .add(new OutputEntry(stack.getDisplayName(), stack.stackSize * (chance / 10000.0), chance, false));
             }
         }
         if (recipe.mFluidOutputs != null) {
@@ -224,7 +220,9 @@ public class GuiRateCalculator extends GuiScreen {
 
     private double parseTarget() {
         try {
-            return Double.parseDouble(targetField.getText().trim());
+            return Double.parseDouble(
+                targetField.getText()
+                    .trim());
         } catch (NumberFormatException e) {
             return -1;
         }
@@ -284,10 +282,7 @@ public class GuiRateCalculator extends GuiScreen {
             0xFFFFFF);
         y += 11;
         fontRendererObj.drawString(
-            String.format(
-                "Crafts/min: %s per machine, %s total",
-                fmt(craftsPerMin),
-                fmt(craftsPerMin * machines)),
+            String.format("Crafts/min: %s per machine, %s total", fmt(craftsPerMin), fmt(craftsPerMin * machines)),
             labelX,
             y,
             0xFFFFFF);

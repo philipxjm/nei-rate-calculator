@@ -38,10 +38,13 @@ public final class BookmarkHelper {
         public final ItemStack stack;
         /** Fluid form of the stack, used when nothing crafts the item. */
         public final FluidStack fluidAlt;
+        /** The amount configured on the bookmark, as target per minute. */
+        public final double amount;
 
-        GroupTarget(ItemStack stack, FluidStack fluidAlt) {
+        GroupTarget(ItemStack stack, FluidStack fluidAlt, double amount) {
             this.stack = stack;
             this.fluidAlt = fluidAlt;
+            this.amount = amount;
         }
     }
 
@@ -125,7 +128,8 @@ public final class BookmarkHelper {
             if (rootItem == null || rootItem.itemStack == null) {
                 return null;
             }
-            return new GroupTarget(rootItem.itemStack, StackInfo.getFluid(rootItem.itemStack));
+            double amount = Math.max(1, rootItem.getAmount());
+            return new GroupTarget(rootItem.itemStack, StackInfo.getFluid(rootItem.itemStack), amount);
         } catch (Throwable t) {
             if (!broken) {
                 broken = true;

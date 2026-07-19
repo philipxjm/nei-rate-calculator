@@ -221,7 +221,16 @@ public final class BookmarkHelper {
         return findBookmarked(stack, fluid, producers, null);
     }
 
-    /** Scoped variant: only recipes bookmarked inside the given group count. */
+    /**
+     * Scoped variant: only recipes bookmarked inside the given group count.
+     * <p>
+     * Every candidate producer already outputs the target, so the bookmark
+     * only has to be identified as "this recipe": same recipe map (NEI's
+     * stored handler name) or its stored result appearing among the
+     * candidate's outputs, plus at least half its ingredients matching. The
+     * stored result alone is NOT required to equal the target — NEI records
+     * only a recipe's first output, which misses multi-output recipes.
+     */
     public static int findBookmarked(ItemStack stack, FluidStack fluid, List<RecipeIndex.Producer> producers,
         Scope scope) {
         if (producers == null || producers.isEmpty()) {
@@ -229,25 +238,26 @@ public final class BookmarkHelper {
         }
         try {
             for (Recipe.RecipeId rid : bookmarkedRecipeIds(scope)) {
-                if (!resultMatches(rid, stack, fluid)) {
-                    continue;
-                }
                 int best = -1;
                 int bestScore = -1;
                 for (int i = 0; i < producers.size(); i++) {
                     RecipeIndex.Producer p = producers.get(i);
-                    int score = 0;
-                    if (p.map.unlocalizedName.equals(rid.getHandleName())) {
-                        score += 1000;
+                    boolean mapMatch = p.map.unlocalizedName.equals(rid.getHandleName());
+                    boolean resultHit = resultInOutputs(rid, p.recipe);
+                    if (!mapMatch && !resultHit) {
+                        continue;
                     }
-                    score += ingredientOverlap(rid, p.recipe);
+                    int[] match = ingredientMatch(rid, p.recipe);
+                    if (match[1] > 0 && match[0] * 2 < match[1]) {
+                        continue;
+                    }
+                    int score = (mapMatch ? 1000 : 0) + (resultHit ? 500 : 0) + match[0] * 10;
                     if (score > bestScore) {
                         bestScore = score;
                         best = i;
                     }
                 }
-                // Same recipe map, or a strong ingredient match across maps.
-                if (bestScore >= 1000 || bestScore >= 3) {
+                if (best >= 0) {
                     return best;
                 }
             }
@@ -260,54 +270,62 @@ public final class BookmarkHelper {
         return -1;
     }
 
-    private static boolean resultMatches(Recipe.RecipeId rid, ItemStack stack, FluidStack fluid) {
+    /** Does the bookmark's stored result appear among this recipe's outputs? */
+    private static boolean resultInOutputs(Recipe.RecipeId rid, gregtech.api.util.GTRecipe recipe) {
         ItemStack result = rid.getResult();
         if (result == null || result.getItem() == null) {
             return false;
         }
-        if (stack != null) {
-            return RecipeIndex.itemKey(result) == RecipeIndex.itemKey(stack);
+        if (recipe.mOutputs != null) {
+            long key = RecipeIndex.itemKey(result);
+            for (ItemStack out : recipe.mOutputs) {
+                if (out != null && out.getItem() != null && RecipeIndex.itemKey(out) == key) {
+                    return true;
+                }
+            }
         }
-        if (fluid != null) {
-            FluidStack asFluid = StackInfo.getFluid(result);
-            return asFluid != null && asFluid.getFluid() == fluid.getFluid();
+        FluidStack asFluid = StackInfo.getFluid(result);
+        if (asFluid != null && recipe.mFluidOutputs != null) {
+            for (FluidStack out : recipe.mFluidOutputs) {
+                if (out != null && out.getFluid() == asFluid.getFluid()) {
+                    return true;
+                }
+            }
         }
         return false;
     }
 
-    private static int ingredientOverlap(Recipe.RecipeId rid, gregtech.api.util.GTRecipe recipe) {
-        int score = 0;
+    /** Returns {matched, total} over the bookmark's usable ingredients. */
+    private static int[] ingredientMatch(Recipe.RecipeId rid, gregtech.api.util.GTRecipe recipe) {
+        int matched = 0;
+        int total = 0;
         for (ItemStack ing : rid.getIngredients()) {
             if (ing == null || ing.getItem() == null) {
                 continue;
             }
+            total++;
             FluidStack ingFluid = StackInfo.getFluid(ing);
+            boolean hit = false;
             if (ingFluid != null && recipe.mFluidInputs != null) {
-                boolean hit = false;
                 for (FluidStack in : recipe.mFluidInputs) {
                     if (in != null && in.getFluid() == ingFluid.getFluid()) {
                         hit = true;
                         break;
                     }
                 }
-                if (hit) {
-                    score += 2;
-                    continue;
+            }
+            if (!hit && recipe.mInputs != null) {
+                for (ItemStack in : recipe.mInputs) {
+                    if (in != null && in.getItem() == ing.getItem()) {
+                        hit = true;
+                        break;
+                    }
                 }
             }
-            if (recipe.mInputs != null) {
-                for (ItemStack in : recipe.mInputs) {
-                    if (in == null || in.getItem() != ing.getItem()) {
-                        continue;
-                    }
-                    score += 1;
-                    if (in.getItemDamage() == ing.getItemDamage()) {
-                        score += 1;
-                    }
-                    break;
-                }
+            if (hit) {
+                matched++;
             }
         }
-        return score;
+        return new int[] { matched, total };
     }
 }

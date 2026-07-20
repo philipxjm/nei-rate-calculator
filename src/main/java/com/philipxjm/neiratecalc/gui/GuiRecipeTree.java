@@ -102,8 +102,8 @@ public class GuiRecipeTree extends GuiScreen {
     private Node selected;
     private boolean totalsView;
     private boolean indexSeen;
-    /** When true, the input field is a crafter count, not a rate. */
-    private boolean crafterMode;
+    /** Node whose crafter count is fixed; the tree rescales around it. */
+    private Node pinned;
 
     public GuiRecipeTree(GuiScreen parent, RecipeMap<?> recipeMap, GTRecipe recipe, GuiRateCalculator.OutputEntry out,
         double targetPerMin, MachineConfig rootCfg) {
@@ -267,21 +267,34 @@ public class GuiRecipeTree extends GuiScreen {
         if (input < 0) {
             input = 0;
         }
-        if (crafterMode) {
-            // A fixed number of crafters drives the rate instead.
-            root.requiredPerMin = 0;
-            GTRecipe recipe = root.recipe();
-            if (recipe != null && root.cfg != null) {
-                RateResult rr = RateMath.compute(recipe, root.cfg);
-                if (rr.ok) {
-                    root.requiredPerMin = input * rr.craftsPerMin * outputPerCraft(root);
-                }
-            }
+        if (pinned != null && !containsNode(root, pinned)) {
+            pinned = null;
+        }
+        if (pinned != null) {
+            // Everything scales linearly with the root rate, so one reference
+            // pass gives the pinned node's machines-per-rate, then the root
+            // rate is solved to land the pinned count exactly.
+            double reference = 1000.0;
+            root.requiredPerMin = reference;
+            recomputeNode(root);
+            root.requiredPerMin = pinned.machinesNeeded > 0 ? reference * input / pinned.machinesNeeded : 0;
         } else {
             root.requiredPerMin = input;
         }
         recomputeNode(root);
         rebuildVisible();
+    }
+
+    private static boolean containsNode(Node node, Node wanted) {
+        if (node == wanted) {
+            return true;
+        }
+        for (Node child : node.children) {
+            if (containsNode(child, wanted)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void recomputeNode(Node node) {
@@ -392,7 +405,7 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.add(new GuiButton(20, width - 120, 6, 54, 20, "Totals"));
         buttonList.add(new GuiButton(21, width - 62, 6, 54, 20, "Back"));
 
-        buttonList.add(new GuiButton(23, 144, 6, 60, 20, crafterMode ? "crafters" : "/min"));
+        buttonList.add(new GuiButton(23, 144, 6, 60, 20, pinned != null ? "crafters" : "/min"));
         targetField = new GuiTextField(fontRendererObj, 70, 8, 70, 16);
         targetField.setText(targetText);
         targetField.setMaxStringLength(10);
@@ -422,11 +435,15 @@ public class GuiRecipeTree extends GuiScreen {
         }
         if (button.id == 23) {
             // Convert the field so the plan stays the same across the toggle.
-            crafterMode = !crafterMode;
-            button.displayString = crafterMode ? "crafters" : "/min";
-            double converted = crafterMode ? root.machinesNeeded : root.requiredPerMin;
-            targetText = GuiRateCalculator.plainNum(Math.max(0, converted));
+            if (pinned != null) {
+                pinned = null;
+                targetText = GuiRateCalculator.plainNum(Math.max(0, root.requiredPerMin));
+            } else {
+                pinned = root;
+                targetText = GuiRateCalculator.plainNum(Math.max(0, root.machinesNeeded));
+            }
             targetField.setText(targetText);
+            updateModeButton();
             recomputeAll();
             return;
         }
@@ -549,8 +566,33 @@ public class GuiRecipeTree extends GuiScreen {
         int expanderX = 6 + node.depth * 10;
         if (mouseX >= expanderX && mouseX < expanderX + 10) {
             toggleExpand(node);
-        }
+        } else
+            if (!node.isRaw() && !node.loop && mouseX >= width - 8 - fontRendererObj.getStringWidth(rightText(node))) {
+                togglePin(node);
+            }
         recomputeAll();
+    }
+
+    /** Click on a row's machine text: fix that step's crafter count. */
+    private void togglePin(Node node) {
+        if (pinned == node) {
+            pinned = null;
+            targetText = GuiRateCalculator.plainNum(Math.max(0, root.requiredPerMin));
+        } else {
+            pinned = node;
+            targetText = GuiRateCalculator.plainNum(Math.max(1, Math.ceil(node.machinesNeeded)));
+        }
+        targetField.setText(targetText);
+        updateModeButton();
+    }
+
+    private void updateModeButton() {
+        for (Object o : buttonList) {
+            GuiButton b = (GuiButton) o;
+            if (b.id == 23) {
+                b.displayString = pinned != null ? "crafters" : "/min";
+            }
+        }
     }
 
     private void toggleExpand(Node node) {
@@ -628,11 +670,17 @@ public class GuiRecipeTree extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
 
-        fontRendererObj.drawString(crafterMode ? "Crafters" : "Target/min", 8, 12, 0xAAAAAA);
+        fontRendererObj.drawString(pinned != null ? "Crafters" : "Target/min", 8, 12, 0xAAAAAA);
         targetField.drawTextBox();
-        String derived = crafterMode
-            ? "= " + GuiRateCalculator.fmt(root.requiredPerMin) + (root.fluid != null ? " L/min" : "/min")
-            : "= " + GuiRateCalculator.fmt(root.machinesNeeded) + " crafters";
+        String derived;
+        if (pinned == null) {
+            derived = "= " + GuiRateCalculator.fmt(root.machinesNeeded) + " crafters";
+        } else {
+            derived = "= " + GuiRateCalculator.fmt(root.requiredPerMin) + (root.fluid != null ? " L/min" : "/min");
+            if (pinned != root) {
+                derived += EnumChatFormatting.GOLD + "  pinned: " + GuiRateCalculator.trim(pinned.label, 16);
+            }
+        }
         fontRendererObj.drawString(EnumChatFormatting.AQUA + derived, 210, 12, 0xFFFFFF);
 
         if (!RecipeIndex.isReady()) {
@@ -686,36 +734,42 @@ public class GuiRecipeTree extends GuiScreen {
             int leftColor = node.loop ? 0xFF5555 : node.isRaw() ? 0xFFD37F : 0xA0A0A0;
             fontRendererObj.drawString(left, x + 10, y, leftColor);
 
-            String right;
-            if (node.loop) {
-                right = EnumChatFormatting.RED + "loop";
-            } else if (node.isRaw()) {
-                if (node.producers.isEmpty() && RecipeIndex.isReady()) {
-                    right = EnumChatFormatting.DARK_GRAY + "raw";
-                } else if (node.bookmarkIdx >= 0) {
-                    right = EnumChatFormatting.GOLD + "* " + EnumChatFormatting.GRAY + "raw (bookmarked, + crafts)";
-                } else {
-                    right = EnumChatFormatting.GRAY + "raw (click + to craft)";
-                }
-            } else if (node.rr != null && !node.rr.ok) {
-                right = EnumChatFormatting.RED + "power!";
-            } else {
-                String count = node.machinesNeeded >= 10 ? String.format("%,.0f", Math.ceil(node.machinesNeeded))
-                    : String.format("%.1f", node.machinesNeeded);
-                String star = node.producerIdx == node.bookmarkIdx && node.bookmarkIdx >= 0
-                    ? EnumChatFormatting.GOLD + "* "
-                    : "";
-                right = star + EnumChatFormatting.AQUA
-                    + count
-                    + "x "
-                    + EnumChatFormatting.RESET
-                    + node.cfg.preset.name
-                    + " ("
-                    + GTValues.VN[node.cfg.tier]
-                    + ")";
-            }
+            String right = rightText(node);
             fontRendererObj.drawString(right, width - 8 - fontRendererObj.getStringWidth(right), y, 0xFFFFFF);
         }
+    }
+
+    private String rightText(Node node) {
+        if (node.loop) {
+            return EnumChatFormatting.RED + "loop";
+        }
+        if (node.isRaw()) {
+            if (node.producers.isEmpty() && RecipeIndex.isReady()) {
+                return EnumChatFormatting.DARK_GRAY + "raw";
+            }
+            if (node.bookmarkIdx >= 0) {
+                return EnumChatFormatting.GOLD + "* " + EnumChatFormatting.GRAY + "raw (bookmarked, + crafts)";
+            }
+            return EnumChatFormatting.GRAY + "raw (click + to craft)";
+        }
+        if (node.rr != null && !node.rr.ok) {
+            return EnumChatFormatting.RED + "power!";
+        }
+        String count = node.machinesNeeded >= 10 ? String.format("%,.0f", Math.ceil(node.machinesNeeded))
+            : String.format("%.1f", node.machinesNeeded);
+        if (node == pinned) {
+            count = EnumChatFormatting.GOLD + "[" + count + "]";
+        }
+        String star = node.producerIdx == node.bookmarkIdx && node.bookmarkIdx >= 0 ? EnumChatFormatting.GOLD + "* "
+            : "";
+        return star + EnumChatFormatting.AQUA
+            + count
+            + "x "
+            + EnumChatFormatting.RESET
+            + node.cfg.preset.name
+            + " ("
+            + GTValues.VN[node.cfg.tier]
+            + ")";
     }
 
     private void drawTotals() {

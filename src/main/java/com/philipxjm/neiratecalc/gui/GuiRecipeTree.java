@@ -102,6 +102,8 @@ public class GuiRecipeTree extends GuiScreen {
     private Node selected;
     private boolean totalsView;
     private boolean indexSeen;
+    /** When true, the input field is a crafter count, not a rate. */
+    private boolean crafterMode;
 
     public GuiRecipeTree(GuiScreen parent, RecipeMap<?> recipeMap, GTRecipe recipe, GuiRateCalculator.OutputEntry out,
         double targetPerMin, MachineConfig rootCfg) {
@@ -261,8 +263,23 @@ public class GuiRecipeTree extends GuiScreen {
     }
 
     private void recomputeAll() {
-        double target = parseTarget();
-        root.requiredPerMin = target > 0 ? target : 0;
+        double input = parseTarget();
+        if (input < 0) {
+            input = 0;
+        }
+        if (crafterMode) {
+            // A fixed number of crafters drives the rate instead.
+            root.requiredPerMin = 0;
+            GTRecipe recipe = root.recipe();
+            if (recipe != null && root.cfg != null) {
+                RateResult rr = RateMath.compute(recipe, root.cfg);
+                if (rr.ok) {
+                    root.requiredPerMin = input * rr.craftsPerMin * outputPerCraft(root);
+                }
+            }
+        } else {
+            root.requiredPerMin = input;
+        }
         recomputeNode(root);
         rebuildVisible();
     }
@@ -375,6 +392,7 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.add(new GuiButton(20, width - 120, 6, 54, 20, "Totals"));
         buttonList.add(new GuiButton(21, width - 62, 6, 54, 20, "Back"));
 
+        buttonList.add(new GuiButton(23, 144, 6, 60, 20, crafterMode ? "crafters" : "/min"));
         targetField = new GuiTextField(fontRendererObj, 70, 8, 70, 16);
         targetField.setText(targetText);
         targetField.setMaxStringLength(10);
@@ -400,6 +418,16 @@ public class GuiRecipeTree extends GuiScreen {
         }
         if (button.id == 22) {
             mc.displayGuiScreen(new GuiRateCalcSettings(this));
+            return;
+        }
+        if (button.id == 23) {
+            // Convert the field so the plan stays the same across the toggle.
+            crafterMode = !crafterMode;
+            button.displayString = crafterMode ? "crafters" : "/min";
+            double converted = crafterMode ? root.machinesNeeded : root.requiredPerMin;
+            targetText = GuiRateCalculator.plainNum(Math.max(0, converted));
+            targetField.setText(targetText);
+            recomputeAll();
             return;
         }
         Node node = selected;
@@ -600,10 +628,12 @@ public class GuiRecipeTree extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
 
-        fontRendererObj.drawString("Target/min", 8, 12, 0xAAAAAA);
+        fontRendererObj.drawString(crafterMode ? "Crafters" : "Target/min", 8, 12, 0xAAAAAA);
         targetField.drawTextBox();
-        String title = EnumChatFormatting.GOLD + GuiRateCalculator.trim(root.label, 24);
-        fontRendererObj.drawString(title, 150, 12, 0xFFFFFF);
+        String derived = crafterMode
+            ? "= " + GuiRateCalculator.fmt(root.requiredPerMin) + (root.fluid != null ? " L/min" : "/min")
+            : "= " + GuiRateCalculator.fmt(root.machinesNeeded) + " crafters";
+        fontRendererObj.drawString(EnumChatFormatting.AQUA + derived, 210, 12, 0xFFFFFF);
 
         if (!RecipeIndex.isReady()) {
             drawCenteredString(

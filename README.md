@@ -16,6 +16,7 @@ Made for GTNH 2.9.0 (NEI 2.8.101-GTNH, GT5-Unofficial 5.09.52.594). The multiblo
 **Press K on a bookmark group** (the chain bracket in NEI's bookmark panel, or any item in it) to open the whole chain as a tree:
 
 - The group's top product becomes the root, with the target rate seeded from the amount you configured on the bookmark.
+- The target can be a rate per minute or a fixed number of crafters — toggle the button next to the input field and the tree scales from whichever you set, showing the equivalent in the other unit.
 - Every ingredient that something in the group *produces* gets expanded with that recipe. Everything else stays a raw input. Your bookmarks decide where the tree stops.
 - Each step in the tree has its own machine, tier, and structure configuration.
 - The Totals view sums machine counts, average EU/t, and raw inputs per minute for the whole chain.

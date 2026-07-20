@@ -109,7 +109,7 @@ public class GuiRecipeTree extends GuiScreen {
         double targetPerMin, MachineConfig rootCfg) {
         this.parent = parent;
         this.scope = null;
-        this.targetText = GuiRateCalculator.plainNum(targetPerMin);
+        this.targetText = GuiRateCalculator.plainNum(targetPerMin * GuiRateCalculator.unitFactor());
 
         root = new Node(out.name, out.stack, out.fluid, null);
         root.requiredPerMin = targetPerMin;
@@ -137,7 +137,7 @@ public class GuiRecipeTree extends GuiScreen {
         BookmarkHelper.Scope scope) {
         this.parent = parent;
         this.scope = scope;
-        this.targetText = GuiRateCalculator.plainNum(targetPerMin);
+        this.targetText = GuiRateCalculator.plainNum(targetPerMin * GuiRateCalculator.unitFactor());
         this.pendingRootStack = stack;
         this.pendingRootFluid = fluidAlt;
         RecipeIndex.ensureBuilt();
@@ -279,7 +279,7 @@ public class GuiRecipeTree extends GuiScreen {
             recomputeNode(root);
             root.requiredPerMin = pinned.machinesNeeded > 0 ? reference * input / pinned.machinesNeeded : 0;
         } else {
-            root.requiredPerMin = input;
+            root.requiredPerMin = input / GuiRateCalculator.unitFactor();
         }
         recomputeNode(root);
         rebuildVisible();
@@ -405,7 +405,8 @@ public class GuiRecipeTree extends GuiScreen {
         buttonList.add(new GuiButton(20, width - 120, 6, 54, 20, "Totals"));
         buttonList.add(new GuiButton(21, width - 62, 6, 54, 20, "Back"));
 
-        buttonList.add(new GuiButton(23, 144, 6, 60, 20, pinned != null ? "crafters" : "/min"));
+        buttonList.add(new GuiButton(23, 144, 6, 60, 20, pinned != null ? "crafters" : "rate"));
+        buttonList.add(new GuiButton(24, 2, 6, 64, 20, GuiRateCalculator.unitSuffix(false)));
         targetField = new GuiTextField(fontRendererObj, 70, 8, 70, 16);
         targetField.setText(targetText);
         targetField.setMaxStringLength(10);
@@ -437,13 +438,29 @@ public class GuiRecipeTree extends GuiScreen {
             // Convert the field so the plan stays the same across the toggle.
             if (pinned != null) {
                 pinned = null;
-                targetText = GuiRateCalculator.plainNum(Math.max(0, root.requiredPerMin));
+                targetText = GuiRateCalculator
+                    .plainNum(Math.max(0, root.requiredPerMin * GuiRateCalculator.unitFactor()));
             } else {
                 pinned = root;
                 targetText = GuiRateCalculator.plainNum(Math.max(0, root.machinesNeeded));
             }
             targetField.setText(targetText);
             updateModeButton();
+            recomputeAll();
+            return;
+        }
+        if (button.id == 24) {
+            double oldFactor = GuiRateCalculator.unitFactor();
+            com.philipxjm.neiratecalc.Config.rateUnit = (com.philipxjm.neiratecalc.Config.rateUnit + 1) % 3;
+            com.philipxjm.neiratecalc.Config.save();
+            button.displayString = GuiRateCalculator.unitSuffix(false);
+            if (pinned == null) {
+                double value = GuiRateCalculator.parseFlexible(targetText);
+                if (value > 0) {
+                    targetText = GuiRateCalculator.plainNum(value * GuiRateCalculator.unitFactor() / oldFactor);
+                    targetField.setText(targetText);
+                }
+            }
             recomputeAll();
             return;
         }
@@ -577,7 +594,7 @@ public class GuiRecipeTree extends GuiScreen {
     private void togglePin(Node node) {
         if (pinned == node) {
             pinned = null;
-            targetText = GuiRateCalculator.plainNum(Math.max(0, root.requiredPerMin));
+            targetText = GuiRateCalculator.plainNum(Math.max(0, root.requiredPerMin * GuiRateCalculator.unitFactor()));
         } else {
             pinned = node;
             targetText = GuiRateCalculator.plainNum(Math.max(1, Math.ceil(node.machinesNeeded)));
@@ -590,7 +607,7 @@ public class GuiRecipeTree extends GuiScreen {
         for (Object o : buttonList) {
             GuiButton b = (GuiButton) o;
             if (b.id == 23) {
-                b.displayString = pinned != null ? "crafters" : "/min";
+                b.displayString = pinned != null ? "crafters" : "rate";
             }
         }
     }
@@ -670,13 +687,13 @@ public class GuiRecipeTree extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
 
-        fontRendererObj.drawString(pinned != null ? "Crafters" : "Target/min", 8, 12, 0xAAAAAA);
         targetField.drawTextBox();
         String derived;
         if (pinned == null) {
             derived = "= " + GuiRateCalculator.fmt(root.machinesNeeded) + " crafters";
         } else {
-            derived = "= " + GuiRateCalculator.fmt(root.requiredPerMin) + (root.fluid != null ? " L/min" : "/min");
+            derived = "= " + GuiRateCalculator.fmt(root.requiredPerMin * GuiRateCalculator.unitFactor())
+                + GuiRateCalculator.unitSuffix(root.fluid != null);
             if (pinned != root) {
                 derived += EnumChatFormatting.GOLD + "  pinned: " + GuiRateCalculator.trim(pinned.label, 16);
             }
@@ -726,8 +743,8 @@ public class GuiRecipeTree extends GuiScreen {
             }
             fontRendererObj.drawString(expander, x, y, 0xFFFFFF);
 
-            String unit = node.fluid != null ? " L/min" : "/min";
-            String left = GuiRateCalculator.fmt(node.requiredPerMin) + unit
+            String unit = GuiRateCalculator.unitSuffix(node.fluid != null);
+            String left = GuiRateCalculator.fmt(node.requiredPerMin * GuiRateCalculator.unitFactor()) + unit
                 + " "
                 + EnumChatFormatting.WHITE
                 + GuiRateCalculator.trim(node.label, 24);
@@ -793,7 +810,11 @@ public class GuiRecipeTree extends GuiScreen {
             if (y > height - PANEL_HEIGHT - 12) return;
         }
         y += 6;
-        fontRendererObj.drawString(EnumChatFormatting.YELLOW + "Raw inputs (/min):", 8, y, 0xFFFFFF);
+        fontRendererObj.drawString(
+            EnumChatFormatting.YELLOW + "Raw inputs (" + GuiRateCalculator.unitSuffix(false) + "):",
+            8,
+            y,
+            0xFFFFFF);
         y += 11;
         for (Map.Entry<String, double[]> e : t.raw.entrySet()) {
             String unit = e.getValue()[1] > 0 ? " L" : "";

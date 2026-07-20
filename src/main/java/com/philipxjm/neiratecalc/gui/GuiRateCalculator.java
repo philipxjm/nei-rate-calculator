@@ -32,6 +32,7 @@ public class GuiRateCalculator extends GuiScreen {
     private static final int ROW_HEIGHT = 22;
     private static final int TREE_BUTTON_ID = 900;
     private static final int SETTINGS_BUTTON_ID = 901;
+    private static final int UNIT_BUTTON_ID = 902;
 
     private final GuiScreen parent;
     private final RecipeMap<?> recipeMap;
@@ -188,6 +189,7 @@ public class GuiRateCalculator extends GuiScreen {
         targetField.setMaxStringLength(10);
         buttonList.add(new GuiButton(TREE_BUTTON_ID, panelLeft + 236, fieldY - 2, 60, 20, "Tree..."));
         buttonList.add(new GuiButton(SETTINGS_BUTTON_ID, panelLeft + 170, fieldY - 2, 60, 20, "Settings"));
+        buttonList.add(new GuiButton(UNIT_BUTTON_ID, panelLeft - 2, fieldY - 2, 58, 20, unitSuffix(false)));
     }
 
     private String targetText = "64";
@@ -213,6 +215,18 @@ public class GuiRateCalculator extends GuiScreen {
         }
         if (button.id == SETTINGS_BUTTON_ID) {
             mc.displayGuiScreen(new GuiRateCalcSettings(this));
+            return;
+        }
+        if (button.id == UNIT_BUTTON_ID) {
+            double oldFactor = unitFactor();
+            com.philipxjm.neiratecalc.Config.rateUnit = (com.philipxjm.neiratecalc.Config.rateUnit + 1) % 3;
+            com.philipxjm.neiratecalc.Config.save();
+            button.displayString = unitSuffix(false);
+            double value = parseFlexible(targetText);
+            if (value > 0) {
+                targetText = plainNum(value * unitFactor() / oldFactor);
+                targetField.setText(targetText);
+            }
             return;
         }
         int rowIndex = button.id / 2;
@@ -276,7 +290,7 @@ public class GuiRateCalculator extends GuiScreen {
             target = 64;
         }
         OutputEntry out = outputs.get(targetOutput);
-        mc.displayGuiScreen(new GuiRecipeTree(this, recipeMap, recipe, out, target, cfg.copy()));
+        mc.displayGuiScreen(new GuiRecipeTree(this, recipeMap, recipe, out, target / unitFactor(), cfg.copy()));
     }
 
     @Override
@@ -330,6 +344,34 @@ public class GuiRateCalculator extends GuiScreen {
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /** Multiplier from internal per-minute rates to the display unit. */
+    static double unitFactor() {
+        switch (com.philipxjm.neiratecalc.Config.rateUnit) {
+            case 1:
+                return 1.0 / 60.0;
+            case 2:
+                return 1.0 / 1200.0;
+            default:
+                return 1.0;
+        }
+    }
+
+    static String unitSuffix(boolean fluid) {
+        String base;
+        switch (com.philipxjm.neiratecalc.Config.rateUnit) {
+            case 1:
+                base = "/s";
+                break;
+            case 2:
+                base = "/t";
+                break;
+            default:
+                base = "/min";
+                break;
+        }
+        return fluid ? " L" + base : base;
     }
 
     /** Plain editable number: no grouping separators. */
@@ -405,7 +447,6 @@ public class GuiRateCalculator extends GuiScreen {
         }
 
         int fieldY = rowY(rows.size()) + 2;
-        fontRendererObj.drawString("Target/min", panelLeft, fieldY + 4, 0xAAAAAA);
         targetField.drawTextBox();
 
         int y = fieldY + 24;
@@ -440,13 +481,21 @@ public class GuiRateCalculator extends GuiScreen {
             0xFFFFFF);
         y += 11;
         fontRendererObj.drawString(
-            String.format("Crafts/min: %s per machine, %s total", fmt(craftsPerMin), fmt(craftsPerMin * cfg.machines)),
+            String.format(
+                "Crafts%s: %s per machine, %s total",
+                unitSuffix(false),
+                fmt(craftsPerMin * unitFactor()),
+                fmt(craftsPerMin * cfg.machines * unitFactor())),
             panelLeft,
             y,
             0xFFFFFF);
         y += 14;
 
-        fontRendererObj.drawString(EnumChatFormatting.GREEN + "Outputs (/min, all machines):", panelLeft, y, 0xFFFFFF);
+        fontRendererObj.drawString(
+            EnumChatFormatting.GREEN + "Outputs (" + unitSuffix(false) + ", all machines):",
+            panelLeft,
+            y,
+            0xFFFFFF);
         y += 11;
         for (OutputEntry out : outputs) {
             String chanceNote = out.chance < 10000 ? String.format(" (%.1f%%)", out.chance / 100.0) : "";
@@ -456,7 +505,7 @@ public class GuiRateCalculator extends GuiScreen {
                     + chanceNote
                     + ": "
                     + EnumChatFormatting.GREEN
-                    + fmt(out.amountPerCraft * craftsPerMin * cfg.machines)
+                    + fmt(out.amountPerCraft * craftsPerMin * cfg.machines * unitFactor())
                     + unit,
                 panelLeft,
                 y,
@@ -465,7 +514,11 @@ public class GuiRateCalculator extends GuiScreen {
         }
         y += 4;
 
-        fontRendererObj.drawString(EnumChatFormatting.RED + "Inputs (/min, all machines):", panelLeft, y, 0xFFFFFF);
+        fontRendererObj.drawString(
+            EnumChatFormatting.RED + "Inputs (" + unitSuffix(false) + ", all machines):",
+            panelLeft,
+            y,
+            0xFFFFFF);
         y += 11;
         for (InputEntry in : inputs) {
             String unit = in.fluid ? " L" : "";
@@ -473,7 +526,7 @@ public class GuiRateCalculator extends GuiScreen {
                 "  " + trim(in.name, 26)
                     + ": "
                     + EnumChatFormatting.RED
-                    + fmt(in.amountPerCraft * craftsPerMin * cfg.machines)
+                    + fmt(in.amountPerCraft * craftsPerMin * cfg.machines * unitFactor())
                     + unit,
                 panelLeft,
                 y,
@@ -485,19 +538,20 @@ public class GuiRateCalculator extends GuiScreen {
         double target = parseTarget();
         if (target > 0 && !outputs.isEmpty()) {
             OutputEntry out = outputs.get(targetOutput);
-            double perMachine = out.amountPerCraft * craftsPerMin;
+            double perMachine = out.amountPerCraft * craftsPerMin * unitFactor();
             if (perMachine > 0) {
                 int needed = (int) Math.ceil(target / perMachine);
                 fontRendererObj.drawString(
                     String.format(
-                        "%s%d machines%s (%s, %s) for %s %s/min",
+                        "%s%d machines%s (%s, %s) for %s %s%s",
                         EnumChatFormatting.GOLD,
                         needed,
                         EnumChatFormatting.RESET,
                         cfg.preset.name,
                         GTValues.VN[cfg.tier],
                         fmt(target),
-                        trim(out.name, 20)),
+                        trim(out.name, 20),
+                        unitSuffix(false)),
                     panelLeft,
                     y,
                     0xFFFFFF);

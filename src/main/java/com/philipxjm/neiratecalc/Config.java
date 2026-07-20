@@ -13,6 +13,8 @@ public final class Config {
     public static boolean preferMultiblock = true;
 
     public static int maxParallels = 256;
+    // 0 = per minute, 1 = per second, 2 = per tick
+    public static int rateUnit = 0;
 
     private static Configuration cfg;
 
@@ -51,6 +53,13 @@ public final class Config {
             1,
             4096,
             "Cap on multiblock parallels used in calculations");
+        rateUnit = cfg.getInt(
+            "rateUnit",
+            Configuration.CATEGORY_GENERAL,
+            0,
+            0,
+            2,
+            "Rate display unit: 0 = per minute, 1 = per second, 2 = per tick");
         if (cfg.hasChanged()) {
             cfg.save();
         }
@@ -68,6 +77,8 @@ public final class Config {
             .set(preferMultiblock);
         cfg.get(Configuration.CATEGORY_GENERAL, "maxParallels", 256)
             .set(maxParallels);
+        cfg.get(Configuration.CATEGORY_GENERAL, "rateUnit", 0)
+            .set(rateUnit);
         cfg.save();
     }
 }

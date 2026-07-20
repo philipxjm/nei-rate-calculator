@@ -20,9 +20,11 @@ import com.philipxjm.neiratecalc.calc.MachineConfig;
 import com.philipxjm.neiratecalc.calc.MachinePreset;
 import com.philipxjm.neiratecalc.calc.MachineRegistry;
 import com.philipxjm.neiratecalc.calc.OCKind;
+import com.philipxjm.neiratecalc.calc.PlanSolver;
 import com.philipxjm.neiratecalc.calc.RateMath;
 import com.philipxjm.neiratecalc.calc.RateResult;
 import com.philipxjm.neiratecalc.calc.RecipeIndex;
+import com.philipxjm.neiratecalc.calc.Simplex;
 
 import gregtech.api.enums.GTValues;
 import gregtech.api.enums.HeatingCoilLevel;
@@ -104,6 +106,14 @@ public class GuiRecipeTree extends GuiScreen {
     private boolean indexSeen;
     /** Node whose crafter count is fixed; the tree rescales around it. */
     private Node pinned;
+
+    // LP plan state; when inactive the legacy tree propagation is shown.
+    private boolean lpActive;
+    private int lpProblem;
+    private String planRootGoods;
+    private Map<String, double[]> planFlows;
+    private final Map<String, String> goodsNames = new java.util.HashMap<String, String>();
+    private final Map<String, Boolean> goodsIsFluid = new java.util.HashMap<String, Boolean>();
 
     public GuiRecipeTree(GuiScreen parent, RecipeMap<?> recipeMap, GTRecipe recipe, GuiRateCalculator.OutputEntry out,
         double targetPerMin, MachineConfig rootCfg) {
@@ -270,19 +280,127 @@ public class GuiRecipeTree extends GuiScreen {
         if (pinned != null && !containsNode(root, pinned)) {
             pinned = null;
         }
-        if (pinned != null) {
-            // Everything scales linearly with the root rate, so one reference
-            // pass gives the pinned node's machines-per-rate, then the root
-            // rate is solved to land the pinned count exactly.
-            double reference = 1000.0;
-            root.requiredPerMin = reference;
-            recomputeNode(root);
-            root.requiredPerMin = pinned.machinesNeeded > 0 ? reference * input / pinned.machinesNeeded : 0;
-        } else {
-            root.requiredPerMin = input / GuiRateCalculator.unitFactor();
+        lpActive = false;
+        lpProblem = 0;
+        try {
+            lpActive = solvePlan(input);
+        } catch (Throwable t) {
+            // The solver must never take the GUI down; fall back below.
         }
-        recomputeNode(root);
+        if (!lpActive) {
+            if (pinned != null) {
+                // Everything scales linearly with the root rate, so one
+                // reference pass gives the pinned node's machines-per-rate,
+                // then the root rate is solved to land the pinned count.
+                double reference = 1000.0;
+                root.requiredPerMin = reference;
+                recomputeNode(root);
+                root.requiredPerMin = pinned.machinesNeeded > 0 ? reference * input / pinned.machinesNeeded : 0;
+            } else {
+                root.requiredPerMin = input / GuiRateCalculator.unitFactor();
+            }
+            recomputeNode(root);
+        }
         rebuildVisible();
+    }
+
+    /**
+     * Solves the plan as a linear program (Shadow-style): rates settle
+     * simultaneously, so recycling loops net out and byproducts feeding
+     * sibling branches are credited. Returns false to use the legacy
+     * top-down propagation instead.
+     */
+    private boolean solvePlan(double input) {
+        if (root.isRaw()) {
+            return false;
+        }
+        List<PlanSolver.Step> steps = new ArrayList<PlanSolver.Step>();
+        List<RateResult> stepResults = new ArrayList<RateResult>();
+        Map<Node, Integer> nodeStep = new java.util.HashMap<Node, Integer>();
+        goodsNames.clear();
+        goodsIsFluid.clear();
+        if (!gatherSteps(root, steps, stepResults, nodeStep)) {
+            return false;
+        }
+        if (steps.isEmpty()) {
+            return false;
+        }
+        planRootGoods = root.stack != null ? PlanSolver.itemKey(root.stack) : PlanSolver.fluidKey(root.fluid);
+        int pinnedIdx = -1;
+        if (pinned != null) {
+            Integer idx = nodeStep.get(pinned);
+            if (idx == null) {
+                return false;
+            }
+            pinnedIdx = idx;
+        }
+        double target = pinned != null ? 0 : input / GuiRateCalculator.unitFactor();
+        PlanSolver.PlanResult plan = PlanSolver.solve(steps, planRootGoods, target, pinnedIdx, input);
+        if (plan.status != Simplex.OPTIMAL) {
+            lpProblem = plan.status;
+            return false;
+        }
+        planFlows = plan.flows;
+        applyPlan(root, null, stepResults, nodeStep, plan);
+        root.requiredPerMin = plan.rootRate;
+        return true;
+    }
+
+    /** Collects one LP step per expanded node; false if any step is broken. */
+    private boolean gatherSteps(Node node, List<PlanSolver.Step> steps, List<RateResult> stepResults,
+        Map<Node, Integer> nodeStep) {
+        GTRecipe recipe = node.recipe();
+        if (!node.expanded || recipe == null || node.loop) {
+            return true;
+        }
+        if (node.cfg == null) {
+            node.cfg = MachineRegistry.defaultConfig(node.map().unlocalizedName, recipe);
+        }
+        RateResult rr = RateMath.compute(recipe, node.cfg);
+        if (!rr.ok || rr.craftsPerMin <= 0) {
+            return false; // legacy path renders the power error
+        }
+        String signature = System.identityHashCode(recipe) + "|"
+            + node.cfg.preset.id
+            + "|"
+            + node.cfg.tier
+            + "|"
+            + node.cfg.amps
+            + "|"
+            + node.cfg.coilOrdinal
+            + "|"
+            + node.cfg.pipeTier
+            + "|"
+            + node.cfg.casingTier;
+        steps.add(PlanSolver.makeStep(recipe, rr.craftsPerMin, signature, goodsNames, goodsIsFluid));
+        stepResults.add(rr);
+        nodeStep.put(node, steps.size() - 1);
+        for (Node child : node.children) {
+            if (!gatherSteps(child, steps, stepResults, nodeStep)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void applyPlan(Node node, Node parent, List<RateResult> stepResults, Map<Node, Integer> nodeStep,
+        PlanSolver.PlanResult plan) {
+        if (parent != null) {
+            Integer parentIdx = nodeStep.get(parent);
+            double parentRate = parentIdx != null ? plan.rates[parentIdx] : 0;
+            double perCraft = node.stack != null ? node.stack.stackSize : node.fluid.amount;
+            node.requiredPerMin = parentRate * perCraft;
+        }
+        Integer idx = nodeStep.get(node);
+        if (idx == null) {
+            return;
+        }
+        node.rr = stepResults.get(idx);
+        node.craftsPerMinNeeded = plan.rates[idx];
+        node.machinesNeeded = node.rr.craftsPerMin > 0 ? plan.rates[idx] / node.rr.craftsPerMin : 0;
+        for (Node child : node.children) {
+            applyPlan(child, node, stepResults, nodeStep, plan);
+        }
     }
 
     private static boolean containsNode(Node node, Node wanted) {
@@ -341,14 +459,55 @@ public class GuiRecipeTree extends GuiScreen {
     private static class Totals {
 
         final Map<String, double[]> raw = new LinkedHashMap<String, double[]>();
+        final Map<String, double[]> surplus = new LinkedHashMap<String, double[]>();
         final Map<String, double[]> machines = new LinkedHashMap<String, double[]>();
         double totalEut;
     }
 
     private Totals computeTotals() {
         Totals t = new Totals();
-        collectTotals(root, t);
+        if (lpActive && planFlows != null) {
+            collectMachines(root, t);
+            for (Map.Entry<String, double[]> entry : planFlows.entrySet()) {
+                String key = entry.getKey();
+                double produced = entry.getValue()[0];
+                double consumed = entry.getValue()[1];
+                String name = goodsNames.get(key);
+                Boolean fluid = goodsIsFluid.get(key);
+                if (name == null || key.equals(planRootGoods)) {
+                    continue;
+                }
+                double fluidFlag = Boolean.TRUE.equals(fluid) ? 1 : 0;
+                if (consumed > 1e-6 && produced <= 1e-6) {
+                    t.raw.put(name, new double[] { consumed, fluidFlag });
+                } else if (produced - consumed > 1e-6) {
+                    t.surplus.put(name, new double[] { produced - consumed, fluidFlag });
+                }
+            }
+        } else {
+            collectTotals(root, t);
+        }
         return t;
+    }
+
+    /** Machines and power only; raw/surplus come from the plan flows. */
+    private void collectMachines(Node node, Totals t) {
+        if (node.isRaw()) {
+            return;
+        }
+        if (node.rr != null && node.rr.ok) {
+            t.totalEut += node.machinesNeeded * node.rr.eut;
+            String label = node.cfg.preset.name + " (" + GTValues.VN[node.cfg.tier] + ")";
+            double[] entry = t.machines.get(label);
+            if (entry == null) {
+                entry = new double[] { 0 };
+                t.machines.put(label, entry);
+            }
+            entry[0] += node.machinesNeeded;
+        }
+        for (Node child : node.children) {
+            collectMachines(child, t);
+        }
     }
 
     private void collectTotals(Node node, Totals t) {
@@ -707,6 +866,20 @@ public class GuiRecipeTree extends GuiScreen {
                 width / 2,
                 LIST_TOP - 11,
                 0xFFFFFF);
+        } else if (lpProblem == Simplex.UNBOUNDED) {
+            drawCenteredString(
+                fontRendererObj,
+                EnumChatFormatting.RED + "Pin doesn't limit the output - showing tree estimate",
+                width / 2,
+                LIST_TOP - 11,
+                0xFFFFFF);
+        } else if (lpProblem == Simplex.INFEASIBLE) {
+            drawCenteredString(
+                fontRendererObj,
+                EnumChatFormatting.RED + "Plan can't be balanced - showing tree estimate",
+                width / 2,
+                LIST_TOP - 11,
+                0xFFFFFF);
         }
 
         if (totalsView) {
@@ -822,13 +995,36 @@ public class GuiRecipeTree extends GuiScreen {
                 "  " + GuiRateCalculator.trim(e.getKey(), 30)
                     + ": "
                     + EnumChatFormatting.YELLOW
-                    + GuiRateCalculator.fmt(e.getValue()[0])
+                    + GuiRateCalculator.fmt(e.getValue()[0] * GuiRateCalculator.unitFactor())
                     + unit,
                 8,
                 y,
                 0xFFFFFF);
             y += 10;
             if (y > height - PANEL_HEIGHT - 12) return;
+        }
+        if (!t.surplus.isEmpty()) {
+            y += 6;
+            fontRendererObj.drawString(
+                EnumChatFormatting.GREEN + "Surplus & byproducts (" + GuiRateCalculator.unitSuffix(false) + "):",
+                8,
+                y,
+                0xFFFFFF);
+            y += 11;
+            for (Map.Entry<String, double[]> e : t.surplus.entrySet()) {
+                String unit = e.getValue()[1] > 0 ? " L" : "";
+                fontRendererObj.drawString(
+                    "  " + GuiRateCalculator.trim(e.getKey(), 30)
+                        + ": "
+                        + EnumChatFormatting.GREEN
+                        + GuiRateCalculator.fmt(e.getValue()[0] * GuiRateCalculator.unitFactor())
+                        + unit,
+                    8,
+                    y,
+                    0xFFFFFF);
+                y += 10;
+                if (y > height - PANEL_HEIGHT - 12) return;
+            }
         }
     }
 

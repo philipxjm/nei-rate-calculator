@@ -27,6 +27,8 @@ There's a settings screen (button inside the calculator) for the default voltage
 
 Drop the jar from [Releases](../../releases) into your `mods` folder. Needs NotEnoughItems and GregTech, which GTNH obviously has. Client-side only.
 
+Since 1.4, the tree is solved as a linear program (the same idea as ShadowTheAge's calculator): all step rates settle simultaneously, so recycling loops net out, byproducts feeding other branches are credited instead of double-counted, and overproduction shows up as a Surplus section in Totals rather than breaking the plan.
+
 ## Known gaps
 
 - Mega Vacuum Freezer subspace coolant, DEFC core-tier overclocks, and Chemical Plant solid-casing recipe gating aren't modeled.

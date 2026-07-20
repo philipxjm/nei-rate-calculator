@@ -302,13 +302,42 @@ public class GuiRateCalculator extends GuiScreen {
     }
 
     private double parseTarget() {
+        return parseFlexible(targetField.getText());
+    }
+
+    /** Accepts plain numbers plus commas and k/m/b suffixes ("576k"). */
+    static double parseFlexible(String text) {
+        if (text == null) {
+            return -1;
+        }
+        String s = text.trim()
+            .toLowerCase()
+            .replace(",", "")
+            .replace(" ", "");
+        double mult = 1;
+        if (s.endsWith("k")) {
+            mult = 1_000;
+            s = s.substring(0, s.length() - 1);
+        } else if (s.endsWith("m")) {
+            mult = 1_000_000;
+            s = s.substring(0, s.length() - 1);
+        } else if (s.endsWith("b") || s.endsWith("g")) {
+            mult = 1_000_000_000;
+            s = s.substring(0, s.length() - 1);
+        }
         try {
-            return Double.parseDouble(
-                targetField.getText()
-                    .trim());
+            return Double.parseDouble(s) * mult;
         } catch (NumberFormatException e) {
             return -1;
         }
+    }
+
+    /** Plain editable number: no grouping separators. */
+    static String plainNum(double v) {
+        if (v == Math.floor(v) && !Double.isInfinite(v)) {
+            return Long.toString((long) v);
+        }
+        return String.format("%.2f", v);
     }
 
     static String fmt(double v) {

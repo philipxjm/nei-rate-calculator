@@ -263,8 +263,15 @@ public final class BookmarkHelper {
                 }
             }
             if (!hit && recipe.mInputs != null) {
+                // GT dusts share one Item and differ only by metadata, so the
+                // comparison must include it (wildcard inputs excepted).
+                long ingKey = RecipeIndex.itemKey(ing);
                 for (ItemStack in : recipe.mInputs) {
-                    if (in != null && in.getItem() == ing.getItem()) {
+                    if (in == null || in.getItem() == null) {
+                        continue;
+                    }
+                    if (RecipeIndex.itemKey(in) == ingKey
+                        || (in.getItem() == ing.getItem() && in.getItemDamage() == 32767)) {
                         hit = true;
                         break;
                     }

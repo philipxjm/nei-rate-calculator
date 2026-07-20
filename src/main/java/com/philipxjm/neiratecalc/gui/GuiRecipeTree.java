@@ -107,7 +107,7 @@ public class GuiRecipeTree extends GuiScreen {
         double targetPerMin, MachineConfig rootCfg) {
         this.parent = parent;
         this.scope = null;
-        this.targetText = GuiRateCalculator.fmt(targetPerMin);
+        this.targetText = GuiRateCalculator.plainNum(targetPerMin);
 
         root = new Node(out.name, out.stack, out.fluid, null);
         root.requiredPerMin = targetPerMin;
@@ -135,7 +135,7 @@ public class GuiRecipeTree extends GuiScreen {
         BookmarkHelper.Scope scope) {
         this.parent = parent;
         this.scope = scope;
-        this.targetText = GuiRateCalculator.fmt(targetPerMin);
+        this.targetText = GuiRateCalculator.plainNum(targetPerMin);
         this.pendingRootStack = stack;
         this.pendingRootFluid = fluidAlt;
         RecipeIndex.ensureBuilt();
@@ -593,11 +593,7 @@ public class GuiRecipeTree extends GuiScreen {
     }
 
     private double parseTarget() {
-        try {
-            return Double.parseDouble(targetText.trim());
-        } catch (NumberFormatException e) {
-            return -1;
-        }
+        return GuiRateCalculator.parseFlexible(targetText);
     }
 
     @Override
